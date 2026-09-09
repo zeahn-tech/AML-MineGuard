@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Last updated | 2026-09-09 |
-| Session | Phase 11 COMPLETE (session 14, 2026-09-09) — Government regulatory command center shipped end-to-end: migrations `…090`–`…093` applied to `vuniwebbrvpgxscdsfei` (government_grants explicit-authorization table + 8 helpers/RPCs + 16 grant-gated regulator SELECT policies + 20th audit trigger; fix migrations: regulator-scoped permission evaluation, government role codes in membership check, grant RPC result capture); `scripts/verify-phase11.mjs` 48/48 PASS with cleanup verified (incl. probe-cleanup fix that previously wiped the seeded `liberia-regulator` org — restored); client layer shipped: `gov-admin.js` Government panel (bootstrap / grants issue-revoke / grant-scoped command center), `supabase-auth.js` Phase 11 wrappers, admin.html wiring, sw.js precache, auth-ui.js gov role labels; Phase 06/07/08/09/10 regression suites all PASS (phase07/08/09 catalog counts updated to Phase 11 totals). Detail below |
+| Session | Phase 12 COMPLETE (session 15, 2026-09-09) — SaaS + enterprise administration shipped end-to-end: migration `…094` (plans + subscriptions modeling, site/org-settings/subscription RPCs, 5-arg grant issue with expiry + `regulator_extend_grant`, platform bootstrap/list/status RPCs, server-side `gov_national_overview` aggregate, dedicated subscriptions audit trigger) applied to `vuniwebbrvpgxscdsfei`; probe-driven fix migration `…095` (grant-issue result capture, audit_log column names, platform-list explicit gate, legacy 4-arg grant overload dropped to fix PostgREST PGRST203 resolution); `scripts/verify-phase12.mjs` 31/31 PASS self-cleaning; client: `supabase-auth.js` Phase 12 wrappers, `org-admin.js` site management + settings/plan card, `gov-admin.js` grant expiry + national overview; regression suites 06/06-cascade/07/08/09/10/11 all PASS. Detail below |
 
 Status vocabulary: NOT_STARTED · IN_PROGRESS · BLOCKED · PARTIALLY_COMPLETE · COMPLETE · VERIFIED
 (VERIFIED requires evidence: tests/outputs recorded here).
@@ -565,7 +565,45 @@ Known limitations (recorded, do not overstate)
 - Client UI for safety-domain data (worker/admin incident flows) remains on the legacy anonymous Firebase channel plus the Phase 10 engine for signed-in users (dual-read window, Phase 05 remainder); the government panel reads the Supabase tables directly.
 
 Status: COMPLETE (recorded live probes; no CI suite — not VERIFIED-tier per project vocabulary).
-Next: Phase 12 — SaaS + enterprise administration.
+Next: Phase 13 — billing integration (deferred) / hardening + TESTING_STRATEGY rollout.
+
+---
+
+## Phase 12 — SaaS + enterprise administration — COMPLETE (2026-09-09)
+
+**Scope delivered** (per PROJECT_MASTER §10/§11, RBAC_MODEL open items, Phase 06/11 recorded gaps):
+
+- **Migration `20260903000094_phase12_saas_enterprise.sql`** (applied to `vuniwebbrvpgxscdsfei`):
+  - `plans` (code/name/max_sites/max_users/features jsonb/sort_order; seeded ≥3 tiers) + `subscriptions` (org-scoped plan_code/status/current period; partial unique index = one active row per org). **Modeling only — no billing provider wired (deliberate deferral).**
+  - RPCs (all SECURITY DEFINER, permission-gated server-side via `auth_user_has_permission`, `revoke all … from public` + `grant execute … to authenticated`):
+    - `site_create` / `site_update` / `site_remove` — closes the Phase 06 recorded gap (sites writes were service-role-only); sites.create/update/delete permission codes.
+    - `org_update_settings` / `org_update_branding` — settings.manage; merged into `organizations.settings`/`branding` jsonb.
+    - `org_update_subscription` — billing.manage; upserts the one active subscription row.
+    - `bootstrap_first_platform_admin` (one-shot; any active membership disqualifies), `platform_list_organizations` (tenant inventory + site/member counts), `platform_update_organization_status` (suspend/reactivate lifecycle).
+    - `regulator_issue_grant` **5-arg overload with `p_expires_at`** (validated future-only) + `regulator_extend_grant` (clear-or-set expiry; issuing org's national_regulatory_admin only) — closes the Phase 11 recorded grant-expiry gap.
+    - `gov_national_overview()` — server-side aggregate over the caller's ACTIVE grants only (documented plain counts: granted orgs, incidents total/open, inspections, CAPAs open, emergency total/active, sites). Non-negotiable #7 honored: formulas documented, no derived safety metrics, no client-side stitching.
+  - `trg_audit_subscriptions` — dedicated audit trigger (additive convention of Phase 06 `…053`; the shared `trg_audit_capture` was NOT rewritten wholesale — that risk was identified pre-application and avoided). Audit trigger count 20 → 21.
+- **Fix migration `20260903000095_phase12_fix_rpc_results.sql`** (probe-driven, convention of Phase 11 `…091`–`…093`):
+  - `regulator_issue_grant`: plpgsql `insert … returning id` without INTO raised 42601 — result now captured into a variable.
+  - `trg_audit_subscriptions_capture`: wrote to nonexistent `audit_log.resource_type` → every subscription change 400'd; corrected to real columns (`resource`, `resource_id`).
+  - `platform_list_organizations`: returned HTTP 200 `[]` for non-platform callers (language sql cannot raise) → converted to plpgsql with explicit P0001 gate.
+  - **Dropped the legacy 4-arg `regulator_issue_grant` overload** — with both overloads live, PostgREST could not resolve partial named-argument calls (PGRST203), breaking ALL Phase 11 grant issuance. One canonical 5-arg signature with defaults remains. This also retro-fixed Phase 11's probe (48/48 again).
+- **Probe** `scripts/verify-phase12.mjs`: **31/31 PASS, self-cleaning** (scratch orgs/users/sites/grants removed in finally; verified 0 residue). Covers: catalog, plan catalog visibility (auth + anon; subscriptions hidden from anon), site lifecycle incl. worker denial, settings persistence + worker denial, subscription switch + persistence + worker denial, grant expiry issue/extend/deny, platform bootstrap gating + status denial + explicit listing denial, national overview correctness (grant reflected, revoked grant excluded, non-granted user = zeros), audit coverage, self-cleanup.
+- **Client**:
+  - `supabase-auth.js`: Phase 12 wrappers (site CRUD, org settings, plans/subscription, extend grant, platform trio, national overview); grant-issue wrapper now sends `p_expires_at`; duplicate legacy 4-arg wrapper removed.
+  - `org-admin.js`: site create/rename/remove UI (permission-gated), org settings + branding card, plan/subscription card (current plan + switch).
+  - `gov-admin.js`: grant issue form gains optional expiry datetime; grants table gains Extend action (`regulator_extend_grant`, blank = clear expiry); new National Overview block rendering `gov_national_overview` server-side stats for gov admins.
+  - `sw.js` precache unchanged (gov-admin.js/org-admin.js already cached); syntax checks clean; all assets served 200 by preview.
+- **Regression**: verify-phase06 PASS, verify-phase06-cascade PASS, verify-phase07 PASS (trigger count 20→21), verify-phase08 ALL PASS (same), verify-phase09 PASS (same), verify-phase10 PASS, verify-phase11 **48/48 PASS** (after the overload fix; prior failure was the PGRST203 resolution above).
+
+**Known limitations (recorded, do not overstate)**
+- Plans/subscriptions are modeled; **no payment provider, invoicing, or dunning exists**. `billing.manage` plan switches are administrative records, not revenue events.
+- Platform RPCs are seeded-role-gated but there is **no platform-admin UI surface** yet (management is probe/API-level); a Platform console is a future phase.
+- `gov_national_overview` counts only ACTIVE grants; expired grants lapse silently (no expiry sweep job — reads already exclude them by `expires_at > now()`).
+- Feature-flags/usage metering (PROJECT_MASTER §10) are still schema-shaped via `plans.features` jsonb but not enforced anywhere (sites.create RPC does not yet consult `max_sites`).
+
+Status: COMPLETE (recorded live probes; no CI suite — not VERIFIED-tier per project vocabulary).
+Next: Phase 13 — per fixed phase order (billing integration when commercially required; TESTING_STRATEGY rollout remains the standing open item).
 
 ---
 

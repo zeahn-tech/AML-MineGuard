@@ -6,10 +6,15 @@ see `docs/engineering/DECISIONS.md` ADR-008. PostgREST's plain-HTTPS JSON API is
 
 ## Live status (2026-09-09)
 
-Phase 11 (Government regulatory command center) is COMPLETE — see
-`docs/engineering/IMPLEMENTATION_STATUS.md` §Phase 11. Migrations `…090`–`…093` applied;
-`verify-phase11.mjs` 48/48 PASS. Phase 10 (offline-first sync), Phase 09 (emergency + SOS), Phase 08
-(JSA + inspection + CAPA), Phase 07 (incidents + evidence), and Phase 06 (RLS + security) all COMPLETE.
+Phase 12 (SaaS + enterprise administration) is COMPLETE — see
+`docs/engineering/IMPLEMENTATION_STATUS.md` §Phase 12. Migrations `…094` (plans/subscriptions,
+site/settings/subscription/platform/grant-expiry RPCs, `gov_national_overview()`, subscriptions audit
+trigger — 21 total) and probe-driven fix `…095` (grant-issue result capture, audit_log column names,
+platform-list explicit gate, legacy 4-arg grant overload dropped for PostgREST PGRST203 resolution)
+applied; `verify-phase12.mjs` 31/31 PASS self-cleaning. Phase 11 (Government regulatory command
+center) is COMPLETE — migrations `…090`–`…093` applied; `verify-phase11.mjs` 48/48 PASS. Phase 10
+(offline-first sync), Phase 09 (emergency + SOS), Phase 08 (JSA + inspection + CAPA), Phase 07
+(incidents + evidence), and Phase 06 (RLS + security) all COMPLETE.
 Phase 05 (data migration) prep remains PARTIALLY COMPLETE: nothing has been imported; prep artifacts live in two GITIGNORED dirs (they
 contain worker names/badges/incident data — never push them):
 

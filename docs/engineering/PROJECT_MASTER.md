@@ -153,7 +153,7 @@ scope, never blanket.
 | 09 | Emergency response + SOS | COMPLETE (2026-09-04, live-verified on `vuniwebbrvpgxscdsfei`: emergency_events + acks + escalations + responders + append-only emergency_log with lifecycle guards, RLS_MATRIX §1.2 policies, 5 audit triggers (19 total); verify-phase09 all-PASS; Phase 06/07/08 regression green) |
 | 10 | Offline-first synchronization | COMPLETE (2026-09-08, client-side offline-first layer shipped + live-verified; see IMPLEMENTATION_STATUS) |
 | 11 | Government regulatory command center | COMPLETE (2026-09-09, live-verified on Supabase project: government_grants explicit-authorization table + helpers/RPCs + 16 grant-gated regulator SELECT policies + audit; regulator bootstrap/grant lifecycle + command-center client; see IMPLEMENTATION_STATUS) |
-| 12 | SaaS + enterprise administration | NOT_STARTED |
+| 12 | SaaS + enterprise administration | COMPLETE (2026-09-09, live-verified on Supabase project: plans/subscriptions modeled (billing deferred), site/settings/subscription RPCs, grant-expiry administration (5-arg issue + extend), platform bootstrap/list/status layer, server-side `gov_national_overview` aggregate, dedicated subscriptions audit trigger; probe 31/31 self-cleaning; see IMPLEMENTATION_STATUS) |
 | 13 | Production hardening + security certification | NOT_STARTED |
 
 Live per-phase detail: `IMPLEMENTATION_STATUS.md`.

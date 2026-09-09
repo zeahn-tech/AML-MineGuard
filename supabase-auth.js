@@ -425,15 +425,6 @@
   function bootstrapFirstRegulatorAdmin() {
     return rpc("bootstrap_first_regulator_admin", {});
   }
-  function regulatorIssueGrant(targetOrgId, opts) {
-    var o = opts || {};
-    return rpc("regulator_issue_grant", {
-      p_target_org_id: targetOrgId,
-      p_site_id: o.siteId || null,
-      p_scope: o.scope || null,
-      p_regulator_user_id: o.regulatorUserId || null
-    });
-  }
   function regulatorRevokeGrant(grantId) {
     return rpc("regulator_revoke_grant", { p_grant_id: grantId });
   }
@@ -461,6 +452,62 @@
     var q = "/emergency_events?select=id,site_id,category,severity,status,started_at,deactivated_at,assembly_point&organization_id=eq." + encodeURIComponent(orgId) + "&deleted=eq.false&order=started_at.desc&limit=50";
     if (siteId && siteId !== "all") q += "&site_id=eq." + encodeURIComponent(siteId);
     return pgGet(q);
+  }
+
+  // ---- Phase 12: SaaS + enterprise administration --------------------------
+  // Site management (sites.create/update/delete permission codes; the RPCs
+  // re-check server-side — the client gates are UX only).
+  function siteCreate(orgId, name, location, county) {
+    return rpc("site_create", { p_organization_id: orgId, p_name: name, p_location: location || null, p_county: county || null });
+  }
+  function siteUpdate(siteId, name, location, county) {
+    return rpc("site_update", { p_site_id: siteId, p_name: name || null, p_location: location || null, p_county: county || null });
+  }
+  function siteRemove(siteId) {
+    return rpc("site_remove", { p_site_id: siteId });
+  }
+  // Org settings/branding (settings.manage server-side).
+  function orgUpdateSettings(orgId, settings, branding) {
+    return rpc("org_update_settings", { p_organization_id: orgId, p_settings: settings || null, p_branding: branding || null });
+  }
+  // Plans/subscriptions (modeled only — billing not wired).
+  function fetchPlans() {
+    return pgGet("/plans?select=code,name,max_sites,max_users,features&order=sort_order.asc");
+  }
+  function fetchOrgSubscription(orgId) {
+    return pgGet("/subscriptions?select=id,plan_code,status,current_period_start,current_period_end&organization_id=eq." + encodeURIComponent(orgId) + "&status=in.(active,trialing)&limit=1");
+  }
+  function orgUpdateSubscription(orgId, planCode) {
+    return rpc("org_update_subscription", { p_organization_id: orgId, p_plan_code: planCode });
+  }
+  // Grant expiry administration (Phase 11 gap): 5-arg issue + extend.
+  function regulatorIssueGrant(targetOrgId, opts) {
+    var o = opts || {};
+    return rpc("regulator_issue_grant", {
+      p_target_org_id: targetOrgId,
+      p_site_id: o.siteId || null,
+      p_scope: o.scope || null,
+      p_regulator_user_id: o.regulatorUserId || null,
+      p_expires_at: o.expiresAt || null
+    });
+  }
+  function regulatorExtendGrant(grantId, expiresAt) {
+    return rpc("regulator_extend_grant", { p_grant_id: grantId, p_expires_at: expiresAt || null });
+  }
+  // Platform administration (platform-scope membership server-side).
+  function bootstrapFirstPlatformAdmin() {
+    return rpc("bootstrap_first_platform_admin", {});
+  }
+  function platformListOrganizations() {
+    return rpc("platform_list_organizations", {})
+      .then(function (rows) { return Array.isArray(rows) ? rows : []; });
+  }
+  function platformUpdateOrganizationStatus(orgId, newStatus) {
+    return rpc("platform_update_organization_status", { p_organization_id: orgId, p_new_status: newStatus });
+  }
+  // Server-side national roll-up over ACTIVE grants (documented formulas).
+  function fetchNationalOverview() {
+    return rpc("gov_national_overview", {});
   }
 
   window.MG_AUTH = {
@@ -506,6 +553,18 @@
     fetchIssuedGrants: fetchIssuedGrants,
     fetchIncidentsGrantScoped: fetchIncidentsGrantScoped,
     fetchEmergencyGrantScoped: fetchEmergencyGrantScoped,
+    siteCreate: siteCreate,
+    siteUpdate: siteUpdate,
+    siteRemove: siteRemove,
+    orgUpdateSettings: orgUpdateSettings,
+    fetchPlans: fetchPlans,
+    fetchOrgSubscription: fetchOrgSubscription,
+    orgUpdateSubscription: orgUpdateSubscription,
+    regulatorExtendGrant: regulatorExtendGrant,
+    bootstrapFirstPlatformAdmin: bootstrapFirstPlatformAdmin,
+    platformListOrganizations: platformListOrganizations,
+    platformUpdateOrganizationStatus: platformUpdateOrganizationStatus,
+    fetchNationalOverview: fetchNationalOverview,
     onAuthChange: onAuthChange
   };
 })();

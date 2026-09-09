@@ -171,7 +171,7 @@ try {
     where t.tgenabled <> 'D' and n.nspname = 'public'
       and t.tgname like 'trg_audit_%';`);
   const trgN = trig.data && trig.data[0] ? Number(trig.data[0].n) : 0;
-  report(trgN === 20 ? "PASS" : "FAIL", "catalog: 20 audit triggers (14 prior + 5 emergency + government_grants)", `count=${trgN}`);
+  report(trgN === 21 ? "PASS" : "FAIL", "catalog: 21 audit triggers (14 prior + 5 emergency + government_grants + subscriptions)", `count=${trgN}`);
 
   // =========================================================================
   // INSPECTIONS: INSERT

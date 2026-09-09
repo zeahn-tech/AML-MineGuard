@@ -190,7 +190,8 @@
       '<td style="color:' + statusColor + ';font-weight:600;">' + esc(g.status) + "</td>" +
       "<td>" + esc(fmtDate(g.expires_at)) + "</td>" +
       "<td>" + (state.isGovAdmin && g.status === "active"
-        ? '<button class="gov-revoke" data-grant="' + esc(g.id) + '">Revoke</button>'
+        ? '<button class="gov-extend" data-grant="' + esc(g.id) + '" data-expires="' + esc(g.expires_at || "") + '">Extend</button> ' +
+          '<button class="gov-revoke" data-grant="' + esc(g.id) + '">Revoke</button>'
         : "—") + "</td>" +
       "</tr>";
   }
@@ -230,7 +231,7 @@
         h += "</div>";
       }
 
-      // Issue grant form (admin only)
+      // Issue grant form (admin only) — includes optional expiry (Phase 12)
       if (state.isGovAdmin) {
         h += '<div class="card-block" style="margin-bottom:20px;">';
         h += '<div class="card-block-title">➕ Issue Government Grant</div>';
@@ -238,9 +239,10 @@
         h += '<input id="govGrantTarget" class="nc-form-input" placeholder="Target organization UUID" style="flex:2;">';
         h += '<input id="govGrantSite" class="nc-form-input" placeholder="Site UUID (optional — blank = org-wide)" style="flex:2;">';
         h += '<input id="govGrantScope" class="nc-form-input" placeholder="Scope label (e.g. compliance monitoring)" style="flex:2;">';
+        h += '<input id="govGrantExpires" type="datetime-local" class="nc-form-input" style="flex:2;">';
         h += '<button id="govIssueBtn" class="gov-btn">Issue Grant</button>';
         h += "</div>";
-        h += '<div style="color:var(--text3);font-size:11px;margin-top:6px;">The regulator user must already be an active government member of this regulator org. Expiry support comes with Phase 12.</div>';
+        h += '<div style="color:var(--text3);font-size:11px;margin-top:6px;">The regulator user must already be an active government member of this regulator org. Expiry is optional — blank = no expiry.</div>';
         h += "</div>";
       }
 
@@ -255,6 +257,14 @@
         h += '<div style="color:var(--text3);font-size:13px;">No grants issued by this regulator org.</div>';
       }
       h += "</div>";
+
+      // National overview — server-side aggregate over ALL active grants (Phase 12)
+      if (state.grantedOrgs.length && state.isGovAdmin) {
+        h += '<div class="card-block" style="margin-bottom:20px;">';
+        h += '<div class="card-block-title">🌐 National Overview (server-side roll-up, all active grants)</div>';
+        h += '<div id="govNational">' + esc(state.nationalError || "Loading…") + "</div>";
+        h += "</div>";
+      }
 
       // Command center (visible when the user holds active grants)
       h += '<div class="card-block" style="margin-bottom:20px;">';
@@ -338,6 +348,29 @@
     document.querySelectorAll(".gov-revoke").forEach(function (b) {
       b.onclick = function () { onRevokeGrant(b.getAttribute("data-grant")); };
     });
+    document.querySelectorAll(".gov-extend").forEach(function (b) {
+      b.onclick = function () { onExtendGrant(b.getAttribute("data-grant"), b.getAttribute("data-expires")); };
+    });
+    if (el("govNational") && state.isGovAdmin && state.grantedOrgs.length) {
+      MG_AUTH.fetchNationalOverview().then(function (rows) {
+        var box = el("govNational");
+        if (!box) return;
+        state.nationalError = null;
+        var r = (Array.isArray(rows) ? rows[0] : rows) || {};
+        box.innerHTML = '<div class="gov-stats">' +
+          statCard(r.orgs_granted || 0, "Organizations Granted", "var(--yellow)") +
+          statCard(r.sites_granted || 0, "Sites Granted", "var(--green)") +
+          statCard(r.active_grants || 0, "Active Grants", "var(--green)") +
+          statCard(r.open_incidents || 0, "Open Incidents", "var(--yellow)") +
+          statCard(r.critical_incidents || 0, "Critical Incidents", "var(--red)") +
+          statCard(r.active_emergencies || 0, "Active Emergencies", "var(--red)") +
+          "</div>";
+      }).catch(function (err) {
+        state.nationalError = (err && err.message) || "National overview unavailable.";
+        var box = el("govNational");
+        if (box) box.textContent = state.nationalError;
+      });
+    }
   }
 
   function onIssueGrant() {
@@ -345,11 +378,35 @@
     if (!target) { statusLine("Enter the target organization UUID.", true); return; }
     var site = el("govGrantSite").value.trim() || null;
     var scope = el("govGrantScope").value.trim() || "compliance monitoring";
-    MG_AUTH.regulatorIssueGrant(target, { siteId: site, scope: scope }).then(function () {
+    var expiresRaw = el("govGrantExpires") ? el("govGrantExpires").value.trim() : "";
+    var expiresAt = expiresRaw ? new Date(expiresRaw).toISOString() : null;
+    if (expiresAt && isNaN(Date.parse(expiresAt))) { statusLine("Invalid expiry date.", true); return; }
+    MG_AUTH.regulatorIssueGrant(target, { siteId: site, scope: scope, expiresAt: expiresAt }).then(function () {
       statusLine("Grant issued.");
       el("govGrantTarget").value = ""; el("govGrantSite").value = ""; el("govGrantScope").value = "";
+      if (el("govGrantExpires")) el("govGrantExpires").value = "";
       refresh();
     }).catch(function (err) { statusLine((err && err.message) || "Issue grant failed.", true); });
+  }
+
+  function onExtendGrant(grantId, currentExpires) {
+    if (!grantId) return;
+    var input = prompt(
+      "New expiry for this grant (ISO or yyyy-mm-dd hh:mm, blank = remove expiry):",
+      currentExpires ? String(currentExpires).replace("T", " ").slice(0, 16) : ""
+    );
+    if (input === null) return;
+    var trimmed = input.trim();
+    var expiresAt = null;
+    if (trimmed) {
+      var parsed = new Date(trimmed.replace(" ", "T"));
+      if (isNaN(parsed.getTime())) { statusLine("Invalid expiry date.", true); return; }
+      expiresAt = parsed.toISOString();
+    }
+    MG_AUTH.regulatorExtendGrant(grantId, expiresAt).then(function () {
+      statusLine(expiresAt ? "Grant expiry updated." : "Grant expiry removed (now non-expiring).");
+      refresh();
+    }).catch(function (err) { statusLine((err && err.message) || "Extend failed.", true); });
   }
 
   function onRevokeGrant(grantId) {

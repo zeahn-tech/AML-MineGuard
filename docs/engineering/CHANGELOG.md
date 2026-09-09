@@ -4,6 +4,29 @@ Format: date · change · docs · status.
 
 ---
 
+## 2026-09-09 (session 15) — Phase 12 COMPLETE: SaaS + enterprise administration, live-verified
+
+- Migration `20260903000094_phase12_saas_enterprise.sql` applied to `vuniwebbrvpgxscdsfei`:
+  - `plans` (seeded ≥3 tiers) + `subscriptions` (one active row per org) — **SaaS modeling only, billing deliberately deferred**.
+  - Site management RPCs `site_create`/`site_update`/`site_remove` — closes the Phase 06 recorded gap (sites writes were service-role-only); permission codes sites.create/update/delete enforced server-side.
+  - `org_update_settings` (settings.manage) merging into `organizations.settings`/`branding` jsonb; `org_update_subscription` (billing.manage).
+  - Platform layer: `bootstrap_first_platform_admin` (one-shot), `platform_list_organizations` (tenant inventory), `platform_update_organization_status` (suspend/reactivate).
+  - Grant expiry administration (Phase 11 gap): 5-arg `regulator_issue_grant` with validated `p_expires_at` + `regulator_extend_grant` (issuing org's national_regulatory_admin only).
+  - `gov_national_overview()` — server-side national roll-up over the caller's ACTIVE grants only (documented plain counts; non-negotiable #7).
+  - Dedicated `trg_audit_subscriptions` audit trigger (additive convention; shared `trg_audit_capture` NOT rewritten) — 21 audit triggers total.
+- Probe-driven fix migration `20260903000095_phase12_fix_rpc_results.sql` (convention of Phase 11 `…091`–`…093`):
+  - `regulator_issue_grant`: fixed plpgsql result capture (42601 `returning` without INTO).
+  - `trg_audit_subscriptions_capture`: fixed audit_log column names (`resource_type` → `resource`; was 42703 on every subscription change).
+  - `platform_list_organizations`: explicit P0001 for non-platform callers (was HTTP 200 `[]`).
+  - **Dropped the legacy 4-arg `regulator_issue_grant` overload** — PostgREST PGRST203 could not resolve partial named-argument calls with both overloads present, breaking all Phase 11 grant issuance; one canonical 5-arg signature with defaults remains.
+- `scripts/verify-phase12.mjs`: **31/31 PASS, self-cleaning** — catalog, plan visibility (anon sees plans, not subscriptions), site lifecycle + worker denial, settings persistence + denial, subscription switch + denial, grant expiry issue/extend/deny, platform gating, national overview correctness (grant reflected; revoked excluded; non-granted user = zeros), audit coverage.
+- Client: `supabase-auth.js` Phase 12 wrappers (site CRUD, settings, plans/subscription, extend grant, platform trio, national overview); `org-admin.js` site management + settings/branding + plan card; `gov-admin.js` grant expiry field + Extend action + National Overview block.
+- Regression: Phase 06, 06-cascade, 07, 08, 09, 10, 11 suites ALL PASS (07/08/09 trigger counts 20→21; Phase 11 recovered to 48/48 via the overload drop).
+- Docs: IMPLEMENTATION_STATUS, SESSION_HANDOFF (session 15), PROJECT_MASTER, RLS_MATRIX, SECURITY_MODEL, DATABASE_ARCHITECTURE, RBAC_MODEL, GOVERNMENT_PLATFORM, ARCHITECTURE, supabase/README.
+- Status: Phase 12 COMPLETE (recorded live probes; no CI suite — not VERIFIED-tier). Known limits: no billing provider/invoicing; no platform-admin UI (API-level only); `max_sites` not yet enforced; no expiry sweep job (reads already exclude expired grants).
+
+---
+
 ## 2026-09-09 (session 14) — Phase 11 COMPLETE: Government regulatory command center, live-verified
 
 - Migrations `20260903000090_phase11_government_authorization.sql` + fix migrations `…091`–`…093` applied to `vuniwebbrvpgxscdsfei` (verified via `migration list` — all four recorded in `schema_migrations`):

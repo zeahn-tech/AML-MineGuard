@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Doc status | **IMPLEMENTED (Phase 11, 2026-09-09) — live-verified on `vuniwebbrvpgxscdsfei` (`verify-phase11.mjs` 48/48 PASS).** The §2 grant model, §3 command-center surfaces (grant-scoped org/site drill-down over incidents + emergency; aggregates server-side views deferred to Phase 12), and §5 enforcement model (grant intersection + role + permission; revocation immediate; audit captured) are live. §4 inspection workflows remain Phase 08/11 target (org inspection flows live via Phase 08; regulator-led inspection authoring not yet surfaced). |
+| Doc status | **IMPLEMENTED (Phase 11 + 12, 2026-09-09) — live-verified on `vuniwebbrvpgxscdsfei` (`verify-phase11.mjs` 48/48 PASS; `verify-phase12.mjs` 31/31 PASS).** The §2 grant model (now including expiry administration: 5-arg `regulator_issue_grant` with validated `p_expires_at` + `regulator_extend_grant`; legacy 4-arg overload dropped for PostgREST resolution), §3 command-center surfaces (grant-scoped org/site drill-down + server-side `gov_national_overview()` national roll-up over active grants — the Phase 11 deferral closed), and §5 enforcement model (grant intersection + role + permission; revocation immediate; audit captured) are live. §4 inspection workflows remain Phase 08/11 target (org inspection flows live via Phase 08; regulator-led inspection authoring not yet surfaced). |
 | Last updated | 2026-09-09 |
 
 ## 1. Principles

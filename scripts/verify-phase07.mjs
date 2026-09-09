@@ -212,7 +212,7 @@ try {
       and t.tgname like 'trg_audit_%';`);
   const trgN = trig.data && trig.data[0] ? Number(trig.data[0].n) : 0;
   // Phase 11 adds trg_audit_government_grants (…090) → 20 total.
-  report(trgN === 20 ? "PASS" : "FAIL", "catalog: 20 audit triggers (7 tenant + 3 incident + 2 JSA + inspections + CAPA + 5 emergency + government_grants)", `count=${trgN}`);
+  report(trgN === 21 ? "PASS" : "FAIL", "catalog: 21 audit triggers (7 tenant + 3 incident + 2 JSA + inspections + CAPA + 5 emergency + government_grants + subscriptions)", `count=${trgN}`);
 
   const bucket = await sql(`select id, public from storage.buckets where id = 'incident-evidence';`);
   const b = bucket.data && bucket.data[0] ? bucket.data[0] : null;

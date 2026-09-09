@@ -39,7 +39,14 @@
     canManageSites: false,    // org owner/admin (site assignment)
     canManageUnits: false,    // owner/admin/safety_manager create; +update for others
     canCreateUnits: false,
-    canManageWorkers: false
+    canManageWorkers: false,
+    canCreateSites: false,    // sites.create (Phase 12)
+    canUpdateSites: false,    // sites.update (Phase 12)
+    canDeleteSites: false,    // sites.delete (Phase 12)
+    canManageSettings: false, // settings.manage (Phase 12)
+    canManageBilling: false,  // billing.manage (Phase 12)
+    subscription: null,       // active subscription row (Phase 12)
+    plan: null                // plan row for the subscription (Phase 12)
   };
 
   function el(id) { return document.getElementById(id); }
@@ -109,7 +116,8 @@
       MG_AUTH.fetchWorkers(orgId),
       MG_AUTH.fetchInvites(orgId),
       MG_AUTH.fetchMyPermissions(orgId),
-      MG_AUTH.fetchEffectiveRole(orgId)
+      MG_AUTH.fetchEffectiveRole(orgId),
+      MG_AUTH.fetchOrgSubscription(orgId).catch(function () { return []; })
     ]).then(function (r) {
       state.org = r[0]; state.sites = r[1]; state.members = r[2];
       state.siteMembers = r[3]; state.units = r[4]; state.workers = r[5];
@@ -120,6 +128,20 @@
       state.canCreateUnits = state.canManagePeople || hasPerm("organizational_units.create");
       state.canManageUnits = state.canManagePeople || hasPerm("organizational_units.update");
       state.canManageWorkers = state.canManagePeople || hasPerm("workers.manage");
+      // Phase 12 permissions (server-resolved; the client only mirrors them).
+      state.canCreateSites = hasPerm("sites.create");
+      state.canUpdateSites = hasPerm("sites.update");
+      state.canDeleteSites = hasPerm("sites.delete");
+      state.canManageSettings = hasPerm("settings.manage");
+      state.canManageBilling = hasPerm("billing.manage");
+      var sub = Array.isArray(r[9]) && r[9].length ? r[9][0] : null;
+      state.subscription = sub;
+      state.plan = null;
+      if (sub) {
+        return MG_AUTH.fetchPlans().then(function (plans) {
+          state.plan = (plans || []).find(function (p) { return p.code === sub.plan_code; }) || null;
+        }).catch(function () {});
+      }
     });
   }
 
@@ -145,6 +167,45 @@
     h.push('<div class="section-hdr"><h3>🏢 ' + esc(org.name || "Organization") + '</h3><span style="font-size:12px;color:var(--text2);">' +
       esc(org.org_type || "") + (org.county ? " · " + esc(org.county) : "") + '</span></div>');
     h.push('<div id="orgAdminStatus" style="display:none;margin-bottom:12px;font-size:13px;font-weight:600;"></div>');
+
+    // --- Plan & settings (Phase 12: SaaS + enterprise administration) ---
+    h.push('<div class="card-block" style="margin-bottom:20px;">');
+    h.push('<div class="settings-group-title">⚙️ Plan &amp; Organization Settings</div>');
+    var sub = state.subscription;
+    var plan = state.plan;
+    if (sub) {
+      var limits = [];
+      if (plan && plan.max_sites != null) limits.push("max " + plan.max_sites + " sites");
+      if (plan && plan.max_users != null) limits.push("max " + plan.max_users + " users");
+      h.push('<div style="font-size:13px;color:var(--text2);margin:10px 0;">Plan: <strong style="color:var(--yellow);">' +
+        esc(plan ? plan.name : sub.plan_code) + '</strong> · status <strong>' + esc(sub.status) + '</strong>' +
+        (limits.length ? " · " + esc(limits.join(", ")) : "") +
+        ' <span style="color:var(--text3);">(billing integration is a later phase — plan changes are recorded, not charged)</span></div>');
+    } else {
+      h.push('<div style="font-size:13px;color:var(--text2);margin:10px 0;">No active subscription found.</div>');
+    }
+    if (state.canManageBilling) {
+      h.push('<div style="display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px;align-items:center;">');
+      h.push('<label class="nc-form-label" style="font-size:10px;">Change plan</label>');
+      h.push('<select id="sub-plan" class="nc-form-select">' +
+        (state.planOptions || []).map(function (p) {
+          return '<option value="' + esc(p.code) + '"' + (sub && p.code === sub.plan_code ? " selected" : "") + ">" + esc(p.name) + "</option>";
+        }).join("") + '</select>');
+      h.push('<button class="filter-btn" id="sub-save" style="background:rgba(245,197,24,0.12);color:var(--yellow);border-color:rgba(245,197,24,0.35);">Save Plan</button>');
+      h.push('</div>');
+    }
+    if (state.canManageSettings) {
+      var st = (state.org && state.org.settings) || {};
+      var br = (state.org && state.org.branding) || {};
+      h.push('<div style="display:flex;gap:10px;flex-wrap:wrap;margin:6px 0;align-items:flex-end;">');
+      h.push('<div><label class="nc-form-label" style="font-size:10px;">Display name</label><input id="os-name" class="nc-form-input" style="width:180px;" value="' + esc(br.name || org.name || "") + '" /></div>');
+      h.push('<div><label class="nc-form-label" style="font-size:10px;">Brand color</label><input id="os-color" type="color" class="nc-form-input" style="width:52px;padding:2px;" value="' + esc(br.primary_color || "#f5c518") + '" /></div>');
+      h.push('<button class="filter-btn" id="os-save" style="background:rgba(46,196,182,0.12);color:var(--green);border-color:rgba(46,196,182,0.35);">Save Settings</button>');
+      h.push('</div>');
+    } else if (!state.canManageBilling) {
+      h.push('<div style="font-size:12px;color:var(--text3);">Plan and settings changes require Owner or Administrator permissions.</div>');
+    }
+    h.push('</div>');
 
     // --- People & access ---
     h.push('<div class="card-block" style="margin-bottom:20px;">');
@@ -231,6 +292,25 @@
     });
     if (!state.sites.length) h.push('<tr><td colspan="5" style="color:var(--text3);">No sites.</td></tr>');
     h.push('</tbody></table>');
+    // --- Phase 12: site create / remove (RPC-gated, server-side permission) ---
+    if (state.canCreateSites) {
+      h.push('<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;">');
+      h.push('<div><label class="nc-form-label" style="font-size:10px;">New site name *</label><input id="sm-name" class="nc-form-input" style="width:170px;" placeholder="e.g. Tokadeh Mine" /></div>');
+      h.push('<div><label class="nc-form-label" style="font-size:10px;">Location</label><input id="sm-loc" class="nc-form-input" style="width:150px;" placeholder="Location" /></div>');
+      h.push('<div><label class="nc-form-label" style="font-size:10px;">County</label><input id="sm-county" class="nc-form-input" style="width:120px;" placeholder="County" /></div>');
+      h.push('<button class="filter-btn" id="sm-create" style="background:rgba(46,196,182,0.12);color:var(--green);border-color:rgba(46,196,182,0.35);">+ Add Site</button>');
+      h.push('</div>');
+    }
+    if (state.canDeleteSites && state.sites.length) {
+      h.push('<div style="font-size:11px;color:var(--text3);">Site removal is a soft delete — safety records are preserved. Select a site:</div>');
+      h.push('<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:6px 0;">');
+      h.push('<select id="sm-remove" class="nc-form-select">' +
+        state.sites.filter(function (s) { return s.status !== "deleted"; }).map(function (s) {
+          return '<option value="' + s.id + '">' + esc(s.name) + '</option>';
+        }).join("") + '</select>');
+      h.push('<button class="filter-btn" id="sm-remove-btn" style="color:var(--red);border-color:rgba(230,57,70,0.4);">🗑️ Remove Site</button>');
+      h.push('</div>');
+    }
     if (state.canManageUnits) {
       h.push('<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">');
       h.push('<div><label class="nc-form-label" style="font-size:10px;">Type</label><select id="ou-type" class="nc-form-select"><option value="department">Department</option><option value="team">Team</option><option value="work_zone">Work Zone</option></select></div>');
@@ -310,6 +390,57 @@
     Array.prototype.forEach.call(wRemoves, function (b) {
       b.addEventListener("click", function () { onRemoveWorker(b.getAttribute("data-id"), b.getAttribute("data-name")); });
     });
+    // --- Phase 12 bindings ---
+    var smCreate = el("sm-create");
+    if (smCreate) smCreate.addEventListener("click", onAddSite);
+    var smRemove = el("sm-remove-btn");
+    if (smRemove) smRemove.addEventListener("click", onRemoveSite);
+    var osSave = el("os-save");
+    if (osSave) osSave.addEventListener("click", onSaveSettings);
+    var subSave = el("sub-save");
+    if (subSave) subSave.addEventListener("click", onSavePlan);
+  }
+
+  // ---- Phase 12 actions ----------------------------------------------------
+  function onAddSite() {
+    var name = el("sm-name").value.trim();
+    if (!name) { statusLine("Enter a site name.", true); return; }
+    MG_AUTH.siteCreate(state.orgId, name, el("sm-loc").value.trim() || null, el("sm-county").value.trim() || null)
+      .then(function () {
+        statusLine("Site created.");
+        el("sm-name").value = ""; el("sm-loc").value = ""; el("sm-county").value = "";
+        refresh();
+      }).catch(function (err) { statusLine((err && err.message) || "Create site failed.", true); });
+  }
+
+  function onRemoveSite() {
+    var siteId = el("sm-remove").value;
+    var s = state.sites.find(function (x) { return x.id === siteId; });
+    if (!confirm("Remove site \"" + (s ? s.name : siteId) + "\"?\n\nThis is a soft delete — all safety records are preserved.")) return;
+    MG_AUTH.siteRemove(siteId).then(function () {
+      statusLine("Site removed (soft delete).");
+      refresh();
+    }).catch(function (err) { statusLine((err && err.message) || "Remove site failed.", true); });
+  }
+
+  function onSaveSettings() {
+    var name = el("os-name").value.trim();
+    var color = el("os-color").value;
+    var branding = { name: name || (state.org && state.org.name) || null, primary_color: color };
+    MG_AUTH.orgUpdateSettings(state.orgId, null, branding).then(function () {
+      statusLine("Organization settings saved.");
+      refresh();
+    }).catch(function (err) { statusLine((err && err.message) || "Save settings failed.", true); });
+  }
+
+  function onSavePlan() {
+    var code = el("sub-plan").value;
+    if (!code) return;
+    if (!confirm("Change the organization plan to \"" + code + "\"?\n\nRecorded immediately; billing integration comes later.")) return;
+    MG_AUTH.orgUpdateSubscription(state.orgId, code).then(function () {
+      statusLine("Plan updated.");
+      refresh();
+    }).catch(function (err) { statusLine((err && err.message) || "Plan change failed.", true); });
   }
 
   function onInvite() {

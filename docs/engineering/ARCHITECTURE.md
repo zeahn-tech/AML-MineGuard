@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Doc status | BASELINE from Phase 00 audit + target locked to Supabase (ADR-008, 2026-09-03). Phases 01–11 landed: multi-tenant foundation, auth, RBAC, site hierarchy, RLS/audit enforcement, safety-domain tables (incidents/JSA/inspections/emergency), offline-first sync, and the government grant-gated regulator command center (2026-09-09). |
+| Doc status | BASELINE from Phase 00 audit + target locked to Supabase (ADR-008, 2026-09-03). Phases 01–12 landed: multi-tenant foundation, auth, RBAC, site hierarchy, RLS/audit enforcement, safety-domain tables (incidents/JSA/inspections/emergency), offline-first sync, the government grant-gated regulator command center (2026-09-09), and the SaaS/enterprise administration layer (plans/subscriptions modeled with billing deferred; site/settings/subscription/platform RPCs; grant-expiry administration; server-side `gov_national_overview` aggregate — 2026-09-09). |
 | Last updated | 2026-09-09 |
 
 ---

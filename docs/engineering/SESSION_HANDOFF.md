@@ -2,9 +2,27 @@
 
 | Field | Value |
 |---|---|
-| Session | 14 — Phase 11 COMPLETE: Government regulatory command center shipped end-to-end (migrations `…090`–`…093` applied + `scripts/verify-phase11.mjs` 48/48 PASS with cleanup verified; client layer: `gov-admin.js` Government panel + `supabase-auth.js` Phase 11 wrappers + admin.html wiring; Phase 06–10 regression suites all PASS). Phase 10 remains COMPLETE |
+| Session | 15 — Phase 12 COMPLETE: SaaS + enterprise administration shipped end-to-end (migrations `…094` + probe-driven fix `…095` applied; `scripts/verify-phase12.mjs` 31/31 PASS self-cleaning; client: `supabase-auth.js` Phase 12 wrappers + `org-admin.js` sites/settings/plan + `gov-admin.js` grant expiry + national overview; regression suites 06/06-cascade/07/08/09/10/11 all PASS — Phase 11 back to 48/48 after the PGRST203 overload fix). Phase 11 remains COMPLETE |
 | Date | 2026-09-09 |
 | Agent | Buffy (Freebuff/Vly) |
+
+## Session 15 — what was completed (Phase 12 — SaaS + enterprise administration, COMPLETE)
+
+Context: next phase per fixed phase order (Session 14 handoff). Phase 12 implements PROJECT_MASTER §10 SaaS modeling (plans/subscriptions in schema, billing deferred), closes the Phase 06 sites-write gap and Phase 11 grant-expiry gap, adds the platform administration layer, and moves national roll-ups server-side (non-negotiable #7).
+
+- **Migration `…094`** (applied live): `plans` + `subscriptions` tables (modeling only); RPCs `site_create/update/remove`, `org_update_settings`, `org_update_subscription`, `bootstrap_first_platform_admin`, `platform_list_organizations`, `platform_update_organization_status`, 5-arg `regulator_issue_grant` (p_expires_at), `regulator_extend_grant`, `gov_national_overview()`; dedicated `trg_audit_subscriptions` trigger (21st audit trigger — shared `trg_audit_capture` deliberately NOT rewritten).
+- **Fix migration `…095`** (probe-driven): grant-issue `returning id` → `into` variable (42601); audit capture corrected to real `audit_log.resource`/`resource_id` columns (was 42703 on every subscription change); `platform_list_organizations` → plpgsql with explicit P0001 gate (was HTTP 200 [] for non-platform callers); **dropped legacy 4-arg `regulator_issue_grant` overload** — PostgREST PGRST203 could not resolve partial named-argument calls with both overloads live, breaking ALL Phase 11 grant issuance.
+- **Probe**: `scripts/verify-phase12.mjs` 31/31 PASS, self-cleaning (orgs/users/sites/grants/audit removed in finally).
+- **Client**: `supabase-auth.js` Phase 12 wrappers (site CRUD, settings, plans/subscription, extend grant, platform trio, national overview; duplicate 4-arg issue wrapper removed); `org-admin.js` site create/rename/remove + settings/branding + plan card; `gov-admin.js` expiry field + Extend action + National Overview block.
+- **Regression**: 06 PASS, 06-cascade PASS, 07 PASS (triggers 20→21), 08 ALL PASS, 09 PASS, 10 PASS, 11 **48/48** (recovered via overload drop).
+- **Files changed**: `supabase/migrations/20260903000094_phase12_saas_enterprise.sql` (new), `supabase/migrations/20260903000095_phase12_fix_rpc_results.sql` (new), `scripts/verify-phase12.mjs` (new), `supabase-auth.js`, `org-admin.js`, `gov-admin.js`, `scripts/verify-phase07.mjs` + `verify-phase08.mjs` + `verify-phase09.mjs` (trigger counts 20→21).
+- **Docs updated**: IMPLEMENTATION_STATUS (Phase 12 COMPLETE + evidence), SESSION_HANDOFF (this), CHANGELOG (session 15), PROJECT_MASTER, RLS_MATRIX, SECURITY_MODEL, DATABASE_ARCHITECTURE, RBAC_MODEL, GOVERNMENT_PLATFORM, ARCHITECTURE, supabase/README.
+
+**Known limitations**: no billing provider (plan switches are administrative records, not revenue); no platform-admin UI (API-level only); `max_sites` not yet enforced by `site_create`; feature flags/usage not enforced; no expiry sweep job (reads already exclude expired grants).
+
+**Next session**: **Phase 13** per fixed phase order — TESTING_STRATEGY rollout remains the standing open item; billing integration deferred until commercially required.
+
+---
 
 ## Session 14 — what was completed (Phase 11 — Government regulatory command center, COMPLETE)
 
