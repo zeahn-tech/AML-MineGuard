@@ -5,7 +5,7 @@
 //        offline navigation fallback
 // ============================================
 
-const CACHE_NAME = 'mineguard-v10';
+const CACHE_NAME = 'mineguard-v11';
 const FIREBASE_PROJECT_ID = 'aml-mineguard';
 const FIREBASE_API_KEY = 'AIzaSyCPqKNe7zyTfBqLT6Gh7Cx2-f7jSf1gvTg';
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
@@ -21,6 +21,13 @@ const ASSETS_TO_CACHE = [
   './lang.js',
   './firebase.js',
   './notices.js',
+  './config.js',
+  './supabase-auth.js',
+  './auth-ui.js',
+  './org-admin.js',
+  './gov-admin.js',
+  './offline-store.js',
+  './sync-engine.js',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -148,6 +155,30 @@ self.addEventListener('periodicsync', event => {
 self.addEventListener('sync', event => {
   if (event.tag === 'mineguard-sos-poll') {
     event.waitUntil(pollEmergencySOSAndNotify());
+  }
+  if (event.tag === 'mineguard-sync-drain') {
+    // Best-effort: tell open clients the network is back so the
+    // sync engine can drain its outbox (Phase 10).
+    event.waitUntil(
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+        clients.forEach(c => c.postMessage({ type: 'sync-drain' }));
+      })
+    );
+  }
+});
+
+// Phase 10 — offline sync queue messaging. Pages post 'sync-enqueue' after
+// a write so the SW can register a background sync tag; the SW answers with
+// 'sync-drain' so clients drain their outboxes when connectivity returns.
+self.addEventListener('message', event => {
+  if (!event.data) return;
+  if (event.data.type === 'sync-enqueue') {
+    if ('sync' in self.registration) {
+      self.registration.sync.register('mineguard-sync-drain').catch(() => {});
+    }
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+      clients.forEach(c => c.postMessage({ type: 'sync-drain' }));
+    });
   }
 });
 

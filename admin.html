@@ -1008,6 +1008,33 @@
       overflow: hidden;
       transition: border-color 0.2s, box-shadow 0.2s;
     }
+    /* Phase 11 — government command center */
+    .gov-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      margin: 14px 0;
+    }
+    .gov-stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px 12px;
+      text-align: center;
+    }
+    .gov-stat-num { font-size: 26px; font-weight: 800; font-family: 'Barlow Condensed', sans-serif; }
+    .gov-stat-label { font-size: 11px; color: var(--text2); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.4px; }
+    .gov-form-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .gov-btn {
+      background: var(--yellow); color: #111; border: 0; border-radius: 8px;
+      padding: 9px 16px; font-weight: 700; font-size: 13px; cursor: pointer;
+    }
+    .gov-btn:hover { filter: brightness(1.08); }
+    .gov-revoke {
+      background: rgba(230,57,70,0.12); color: var(--red); border: 1px solid rgba(230,57,70,0.35);
+      border-radius: 8px; padding: 5px 12px; font-weight: 600; font-size: 12px; cursor: pointer;
+    }
+    .gov-revoke:hover { background: rgba(230,57,70,0.2); }
     .notice-ov-card:hover {
       border-color: rgba(245,197,24,0.3);
       box-shadow: 0 4px 16px rgba(0,0,0,0.2);
@@ -1037,6 +1064,47 @@
     }
 
     </style>
+  <script src="offline-store.js"></script>
+  <script src="sync-engine.js"></script>
+  <script>
+    // Phase 10 — offline-first sync engine bootstrap
+    (function () {
+      function bootSyncEngine() {
+        try {
+          if (!window.MG_STORE || !window.MG_SYNC) return;
+          var store = window.MG_STORE.createDefault();
+          window.MG_OFFLINE = store;
+          if (window.MG_STORE.migrateLocalStorage) {
+            window.MG_STORE.migrateLocalStorage(store).then(function (r) {
+              if (r && r.migrated && r.records > 0) console.log('[MineGuard] Offline migration: ' + r.records + ' legacy records');
+            }).catch(function () {});
+          }
+          var engine = window.MG_SYNC.createEngine({ store: store, auth: window.MG_AUTH || null });
+          window.MG_SYNC_ENGINE = engine;
+          engine.init();
+          engine.wireConnectivity();
+          engine.startHeartbeat(30000);
+          // Re-resolve org/site context after sign-in/sign-out
+          window.addEventListener('mg-auth-change', function () {
+            try { engine.resolveContext(true).then(function () { engine.drain(); }); } catch (e) {}
+          });
+          // Service worker: react to drain messages + request bg-sync registration
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('message', function (ev) {
+              if (ev.data && ev.data.type === 'sync-drain') { try { engine.drain(); } catch (e) {} }
+            });
+            navigator.serviceWorker.ready.then(function (reg) {
+              reg.postMessage({ type: 'sync-enqueue' });
+            }).catch(function () {});
+          }
+        } catch (e) {
+          console.warn('[MineGuard] Sync engine boot failed:', e.message);
+        }
+      }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootSyncEngine);
+      else bootSyncEngine();
+    })();
+  </script>
 </head>
 <body>
 
@@ -1092,13 +1160,17 @@
         </div>
     <div class="login-title">MINE<span>GUARD</span></div>
     <div class="login-sub">Admin Dashboard</div>
-    <label class="login-label">Username</label>
-    <input type="text" class="login-input" id="loginUser" placeholder="admin" />
+    <label class="login-label">Email</label>
+    <input type="email" class="login-input" id="loginUser" placeholder="you@company.com" autocomplete="email" />
     <label class="login-label">Password</label>
-    <input type="password" class="login-input" id="loginPass" placeholder="••••••••" onkeydown="if(event.key==='Enter') doLogin()" />
-    <button class="login-btn" onclick="doLogin()">🔐 LOGIN</button>
-    <div class="login-error" id="loginError">❌ Invalid username or password</div>
-    <div class="login-hint">Power by: Zeahn's Tech</div>
+    <input type="password" class="login-input" id="loginPass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter') doLogin()" />
+    <button class="login-btn" id="loginBtn" onclick="doLogin()">🔐 LOGIN</button>
+    <div class="login-error" id="loginError"></div>
+    <div id="loginClaimWrap" style="display:none;margin-top:14px;">
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;" id="loginClaimHint"></div>
+      <button class="login-btn" style="background:linear-gradient(135deg,#2ec4b6,#1d9a8e);color:#fff;" id="loginClaimBtn" onclick="claimOrgOwnership()">🏗️ Set Up Organization (Owner)</button>
+    </div>
+    <div class="login-hint">Secure sign-in · Powered by Supabase Auth</div>
   </div>
 </div>
 
@@ -1177,7 +1249,13 @@
         <div class="nav-item" onclick="showPanel('workers', this)">
           <span class="ni">👷</span> Workers
         </div>
+        <div class="nav-item" onclick="showPanel('organization', this)">
+          <span class="ni">🏢</span> Organization
+        </div>
         <div class="sidebar-section">System</div>
+        <div class="nav-item" onclick="showPanel('government', this)">
+          <span class="ni">🏛️</span> Government
+        </div>
         <div class="nav-item" onclick="showPanel('deleted', this)">
           <span class="ni">🗑️</span> Recently Deleted
           <span id="deletedBadge" style="margin-left:auto;background:var(--text3);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;"></span>
@@ -1197,7 +1275,7 @@
       <div class="dash-topbar">
         <div class="topbar-title" id="topbarTitle">📊 Overview</div>
         <div class="topbar-right">
-          <span class="admin-badge">ADMIN</span>
+          <span class="admin-badge" id="adminBadge">ADMIN</span>
           <div class="sync-indicator offline" id="syncIndicator">
             <span class="sync-dot"></span>
             <span id="syncLabel">Connecting...</span>
@@ -1394,6 +1472,16 @@
           </div>
         </div>
 
+        <!-- ORGANIZATION PANEL (Phase 04 — hierarchy, members, invites, workers) -->
+        <div class="panel" id="panel-organization">
+          <div id="orgAdminRoot"></div>
+        </div>
+
+        <!-- GOVERNMENT PANEL (Phase 11 — regulator command center) -->
+        <div class="panel" id="panel-government">
+          <div id="govAdminRoot"></div>
+        </div>
+
         <!-- RECENTLY DELETED PANEL -->
         <div class="panel" id="panel-deleted">
           <div class="section-hdr">
@@ -1561,15 +1649,10 @@
               <div class="settings-group-title">Admin Access</div>
               <div class="setting-row">
                 <div>
-                  <div class="setting-label">Admin Username</div>
+                  <div class="setting-label">Safety Officer Name</div>
+                  <div class="setting-desc">Shown on records you create. Account password is managed by secure sign-in.</div>
                 </div>
-                <input type="text" class="setting-input" id="set-user" placeholder="admin" />
-              </div>
-              <div class="setting-row">
-                <div>
-                  <div class="setting-label">Admin Password</div>
-                </div>
-                <input type="password" class="setting-input" id="set-pass" placeholder="New password" />
+                <input type="text" class="setting-input" id="set-user" placeholder="Your name" />
               </div>
             </div>
             <div class="settings-group">
@@ -1619,38 +1702,170 @@
 
 <!-- firebase.js uses Firestore REST API — no SDK scripts needed -->
 <script src="firebase.js"></script>
+<script src="config.js"></script>
+<script src="supabase-auth.js"></script>
+<script src="org-admin.js"></script>
+<script src="gov-admin.js"></script><script src="org-admin.js"></script>
 
 <script>
 // ============================================================
 // MINEGUARD ADMIN DASHBOARD — JAVASCRIPT v2 (Firebase)
 // ============================================================
 
-// ---- AUTH ----
-const DEFAULT_USER = 'admin';
-const DEFAULT_PASS = 'mineguard2024';
+// ---- AUTH (Supabase GoTrue + PostgREST; RLS is the security boundary) ----
+// Phase 02: the hard-coded static-credential admin gate and plaintext
+// password storage were removed. Identity comes from Supabase Auth; the dashboard
+// requires an ACTIVE membership with owner/admin role in an organization.
+
+let _dashboardStarted = false;
+
+function showLoginError(msg) {
+  const el = document.getElementById('loginError');
+  if (!el) return;
+  el.style.display = 'block';
+  el.textContent = msg || '';
+}
+
+function hideLoginError() {
+  const el = document.getElementById('loginError');
+  if (el) el.style.display = 'none';
+}
+
+function setLoginBusy(busy) {
+  const btn = document.getElementById('loginBtn');
+  if (btn) { btn.disabled = busy; btn.textContent = busy ? '⏳ SIGNING IN…' : '🔐 LOGIN'; }
+}
+
+// Actor name used on records/soft-deletes: real identity (email) when signed
+// in, falling back to the name configured in Settings, never a fixed default.
+function getAdminActorName() {
+  try {
+    const sess = (window.MG_AUTH && MG_AUTH.getSession) ? MG_AUTH.getSession() : null;
+    if (sess && sess.user) {
+      const meta = sess.user.user_metadata || {};
+      if (sess.user.email) return sess.user.email;
+      if (meta.email) return meta.email;
+      if (meta.name) return meta.name;
+    }
+  } catch (e) { /* ignore */ }
+  return localStorage.getItem('mg_admin_user') || 'Safety Officer';
+}
+
+function hasAdminRole(m) {
+  return !!(m && m.status === 'active' && (m.role === 'owner' || m.role === 'admin'));
+}
+
+function enterDashboard() {
+  if (_dashboardStarted) return;
+  _dashboardStarted = true;
+  try { localStorage.setItem('mg_admin_user', getAdminActorName()); } catch (e) {}
+  const badge = document.getElementById('adminBadge');
+  if (badge) badge.textContent = getAdminActorName().toUpperCase().slice(0, 18);
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  initDashboard();
+}
+
+function showClaimStep(message) {
+  hideLoginError();
+  const hint = document.getElementById('loginClaimHint');
+  const wrap = document.getElementById('loginClaimWrap');
+  if (hint) hint.textContent = message || '';
+  if (wrap) wrap.style.display = 'block';
+}
+
+function hideClaimStep() {
+  const wrap = document.getElementById('loginClaimWrap');
+  if (wrap) wrap.style.display = 'none';
+}
 
 function doLogin() {
-  const u = document.getElementById('loginUser').value.trim();
-  const p = document.getElementById('loginPass').value.trim();
-  const storedUser = localStorage.getItem('mg_admin_user') || DEFAULT_USER;
-  const storedPass = localStorage.getItem('mg_admin_pass') || DEFAULT_PASS;
-  if (u === storedUser && p === storedPass) {
-    document.getElementById('loginScreen').style.display = 'none';
-    document.getElementById('dashboard').style.display = 'block';
-    initDashboard();
-  } else {
-    document.getElementById('loginError').style.display = 'block';
-  }
+  if (!window.MG_CONFIG || !window.MG_AUTH) { showLoginError('Auth is not configured. Check config.js.'); return; }
+  const email = document.getElementById('loginUser').value.trim();
+  const pass  = document.getElementById('loginPass').value;
+  if (!email || !pass) { showLoginError('Please enter your email and password.'); return; }
+  hideLoginError();
+  hideClaimStep();
+  setLoginBusy(true);
+  MG_AUTH.signInWithPassword(email, pass)
+    .then(function (res) {
+      if (!res || !res.session) {
+        setLoginBusy(false);
+        showLoginError('Account created — check your inbox to confirm your email, then sign in again.');
+        return;
+      }
+      return attemptAdminEntry();
+    })
+    .catch(function (err) {
+      setLoginBusy(false);
+      showLoginError((err && err.message) || 'Sign-in failed. Check your connection and try again.');
+    });
+}
+
+// Enter the dashboard when an active owner/admin membership exists; otherwise
+// offer the first-owner bootstrap (only valid while the org has no members).
+function attemptAdminEntry() {
+  setLoginBusy(true);
+  hideClaimStep();
+  return MG_AUTH.fetchMyMemberships()
+    .then(function (mems) {
+      setLoginBusy(false);
+      const list = mems || [];
+      if (list.some(hasAdminRole)) { enterDashboard(); return; }
+      if (list.length) {
+        showLoginError('Signed in, but this account has no administrator role for any organization.');
+        return;
+      }
+      showClaimStep('You are signed in but not yet linked to an organization. If you are the first administrator of this MineGuard deployment, set up the seeded organization now.');
+    })
+    .catch(function () { setLoginBusy(false); showLoginError('Could not verify organization access. Please retry.'); });
+}
+
+function claimOrgOwnership() {
+  const btn = document.getElementById('loginClaimBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Setting up…'; }
+  hideLoginError();
+  MG_AUTH.bootstrapFirstOwner()
+    .then(function () {
+      if (btn) { btn.disabled = false; btn.textContent = '🏗️ Set Up Organization (Owner)'; }
+      hideClaimStep();
+      return attemptAdminEntry();
+    })
+    .catch(function (err) {
+      if (btn) { btn.disabled = false; btn.textContent = '🏗️ Set Up Organization (Owner)'; }
+      showLoginError((err && err.message) || 'Setup failed — an owner may already exist for this organization.');
+      hideClaimStep();
+    });
 }
 
 function doLogout() {
-  detachAllListeners();
+  try { detachAllListeners(); } catch (e) {}
+  _dashboardStarted = false;
   document.getElementById('dashboard').style.display = 'none';
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('loginUser').value = '';
   document.getElementById('loginPass').value = '';
-  document.getElementById('loginError').style.display = 'none';
+  hideLoginError();
+  hideClaimStep();
+  if (window.MG_AUTH && MG_AUTH.signOut) MG_AUTH.signOut().catch(function () {});
 }
+
+// Silent restore: a valid stored session with admin access skips the login
+// screen (important for offline dashboard use of the PWA).
+(function restoreAdminSession() {
+  function run() {
+    if (!window.MG_CONFIG || !window.MG_AUTH) { try { document.getElementById('loginUser').focus(); } catch (e) {} return; }
+    MG_AUTH.ensureSession().then(function (session) {
+      if (!session) { try { document.getElementById('loginUser').focus(); } catch (e) {} return; }
+      MG_AUTH.fetchMyMemberships().then(function (mems) {
+        if ((mems || []).some(hasAdminRole)) enterDashboard();
+        else try { document.getElementById('loginUser').focus(); } catch (e) {}
+      }).catch(function () { try { document.getElementById('loginUser').focus(); } catch (e) {} });
+    }).catch(function () {});
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
+  else run();
+})();
 
 // ---- PANELS ----
 function showPanel(id, el) {
@@ -1658,7 +1873,7 @@ function showPanel(id, el) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('panel-' + id).classList.add('active');
   if (el) el.classList.add('active');
-  const titles = { overview:'📊 Overview', incidents:'📸 Incident Reports', jsas:'📋 JSA Submissions', analytics:'📈 Analytics', workers:'👷 Workers', deleted:'🗑️ Recently Deleted', notices:'📢 Safety Notices', settings:'⚙️ Settings' };
+  const titles = { overview:'📊 Overview', incidents:'📸 Incident Reports', jsas:'📋 JSA Submissions', analytics:'📈 Analytics', workers:'👷 Workers', organization:'🏢 Organization', government:'🏛️ Government',organization:'🏢 Organization', deleted:'🗑️ Recently Deleted', notices:'📢 Safety Notices', settings:'⚙️ Settings' };
   document.getElementById('topbarTitle').textContent = titles[id] || id;
   refreshPanel(id);
 }
@@ -1669,6 +1884,8 @@ function refreshPanel(id) {
   if (id === 'jsas')       renderAllJSAs();
   if (id === 'analytics')  renderAnalytics();
   if (id === 'workers')    renderWorkers();
+  if (id === 'organization') window.OrgAdmin && OrgAdmin.render();
+  if (id === 'government') window.GovAdmin && GovAdmin.render();  if (id === 'organization') window.OrgAdmin && OrgAdmin.render();
   if (id === 'deleted')    renderDeletedPanel();
   if (id === 'settings')   loadSettings();
   if (id === 'notices')    renderAdminNoticesPanel();
@@ -1973,7 +2190,7 @@ async function deleteIncidentNow(docId) {
   renderOverview();
   updateIncidentBadge();
 
-  const adminUser = localStorage.getItem('mg_admin_user') || DEFAULT_USER;
+  const adminUser = getAdminActorName();
   const ok = await softDeleteIncident(docId, adminUser);
   if (!ok) {
     console.warn('[Admin] Soft-delete may not have synced to cloud (offline?) — saved locally.');
@@ -2076,7 +2293,7 @@ async function deleteJSANow(docId) {
   renderAllJSAs();
   renderOverview();
 
-  const adminUser = localStorage.getItem('mg_admin_user') || DEFAULT_USER;
+  const adminUser = getAdminActorName();
   const ok = await softDeleteJSA(docId, adminUser);
   if (!ok) {
     console.warn('[Admin] Soft-delete may not have synced to cloud (offline?) — saved locally.');
@@ -2317,16 +2534,14 @@ function loadSettings() {
   document.getElementById('set-company').value = localStorage.getItem('mg_company') || 'ArcelorMittal Liberia';
   document.getElementById('set-site').value    = localStorage.getItem('mg_site')    || 'Nimba Mine';
   document.getElementById('set-manager').value = localStorage.getItem('mg_manager') || '';
-  document.getElementById('set-user').value    = localStorage.getItem('mg_admin_user') || DEFAULT_USER;
+  document.getElementById('set-user').value    = getAdminActorName();
 }
 function saveSettings() {
   localStorage.setItem('mg_company',     document.getElementById('set-company').value);
   localStorage.setItem('mg_site',        document.getElementById('set-site').value);
   localStorage.setItem('mg_manager',     document.getElementById('set-manager').value);
   const u = document.getElementById('set-user').value.trim();
-  const p = document.getElementById('set-pass').value.trim();
   if (u) localStorage.setItem('mg_admin_user', u);
-  if (p) localStorage.setItem('mg_admin_pass', p);
   const saved = document.getElementById('settingsSaved');
   saved.style.display = 'block';
   setTimeout(() => saved.style.display = 'none', 2500);

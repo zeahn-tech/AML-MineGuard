@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+export SUPABASE_URL="https://vuniwebbrvpgxscdsfei.supabase.co"
+export SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ1bml3YnJ2cGd4c2NkZXNlMWUiLCJyb2xlIjoiYW5vbiIsInVzZXJuYW1lIjoiYW5vbiJ9._jxgQFgHcAbOGR0E8qRoUw3aYdZ4JUPWCl2qyNrHt0"
+export SUPABASE_SERVICE_ROLE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ1bml3YnJ2cGd4c2NkZXNlMWUiLCJyb2xlIjoicm9sZXMiLCJpYXQiOjE3NTk3NzgyMjAsImV4cCI6MjcyNzU4NjIyMH0.K75WxUTaJbRF7kZuGk4zN6IV_MAq4F_Zg4CyQwKcYAQ"
+export SUPABASE_DB_URL="postgresql://postgres:Pr0v1d3rSup@db.vuniwebbrvpgxscdsfei.supabase.co:5432/postgres?sslmode=require"
+bun scripts/verify-phase11.mjs

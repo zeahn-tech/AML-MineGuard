@@ -1,0 +1,13 @@
+{
+  "name": "mineguard-aml",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MineGuard — mining safety PWA (static HTML/CSS/JS). Dev server serves the static app.",
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs"
+  },
+  "devDependencies": {
+    "supabase": "^2.116.0"
+  }
+}

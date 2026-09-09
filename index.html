@@ -773,6 +773,47 @@ body.mg-sos-locked { overflow: hidden; }
   .emergency-screen-action-grid { grid-template-columns: 1fr; }
 }
 </style>
+  <script src="offline-store.js"></script>
+  <script src="sync-engine.js"></script>
+  <script>
+    // Phase 10 — offline-first sync engine bootstrap
+    (function () {
+      function bootSyncEngine() {
+        try {
+          if (!window.MG_STORE || !window.MG_SYNC) return;
+          var store = window.MG_STORE.createDefault();
+          window.MG_OFFLINE = store;
+          if (window.MG_STORE.migrateLocalStorage) {
+            window.MG_STORE.migrateLocalStorage(store).then(function (r) {
+              if (r && r.migrated && r.records > 0) console.log('[MineGuard] Offline migration: ' + r.records + ' legacy records');
+            }).catch(function () {});
+          }
+          var engine = window.MG_SYNC.createEngine({ store: store, auth: window.MG_AUTH || null });
+          window.MG_SYNC_ENGINE = engine;
+          engine.init();
+          engine.wireConnectivity();
+          engine.startHeartbeat(30000);
+          // Re-resolve org/site context after sign-in/sign-out
+          window.addEventListener('mg-auth-change', function () {
+            try { engine.resolveContext(true).then(function () { engine.drain(); }); } catch (e) {}
+          });
+          // Service worker: react to drain messages + request bg-sync registration
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('message', function (ev) {
+              if (ev.data && ev.data.type === 'sync-drain') { try { engine.drain(); } catch (e) {} }
+            });
+            navigator.serviceWorker.ready.then(function (reg) {
+              reg.postMessage({ type: 'sync-enqueue' });
+            }).catch(function () {});
+          }
+        } catch (e) {
+          console.warn('[MineGuard] Sync engine boot failed:', e.message);
+        }
+      }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootSyncEngine);
+      else bootSyncEngine();
+    })();
+  </script>
 </head>
 <body>
 
@@ -1363,6 +1404,9 @@ body.mg-sos-locked { overflow: hidden; }
   <script src="firebase.js"></script>
   <script src="notices.js"></script>
   <script src="app.js"></script>
+  <script src="config.js"></script>
+  <script src="supabase-auth.js"></script>
+  <script src="auth-ui.js"></script>
 
   <!-- Set correct active lang button on load -->
   <script>
