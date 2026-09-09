@@ -181,6 +181,10 @@ async function saveEmergencySOSCloud(state) {
       createdAt: state.createdAt || state.startedAt || Date.now(),
       updatedAt: Date.now()
     };
+
+    // Phase 10 — queue for the Supabase offline sync engine (non-blocking)
+    _mgSyncEnqueue('emergency_events', payload);
+
     const ref = await restAdd(COL_SOS, payload);
     return ref;
   } catch (err) {
@@ -501,6 +505,32 @@ function detachAllListeners() {
   window.MG.listeners = [];
 }
 
+// ── Phase 10 — offline-first sync enqueue hook ───────────────────────────────
+// When a Supabase session exists, new safety records are ALSO queued through
+// the offline sync engine (window.MG_SYNC_ENGINE), which maps legacy form
+// payloads to the Phase 07–09 tables with client_id idempotency. Firestore
+// remains the legacy mirror; Supabase is the authoritative tenant store.
+// Non-blocking: failures only warn — the Firebase path is never degraded.
+async function _mgSyncEnqueue(entity, payload) {
+  try {
+    const engine = window.MG_SYNC_ENGINE;
+    const auth   = window.MG_AUTH;
+    if (!engine || !auth || !auth.getSession) return;
+    const session = auth.getSession();
+    if (!session || !session.access_token) return; // signed out → Firestore-only
+    const withClient = {
+      ...payload,
+      client_id: payload.client_id || (window.MG_STORE ? window.MG_STORE.newClientId() : undefined)
+    };
+    const res = await engine.submit(entity, 'insert', withClient, {
+      priority: entity.indexOf('emergency') === 0 ? 100 : 0
+    });
+    console.log('[MineGuard] Offline sync enqueued:', entity, res.client_id);
+  } catch (err) {
+    console.warn('[MineGuard] Offline sync enqueue skipped:', err.message);
+  }
+}
+
 // =============================================================================
 // INCIDENTS
 // =============================================================================
@@ -512,6 +542,9 @@ function detachAllListeners() {
  */
 async function saveIncidentToCloud(incident) {
   const incidentWithTs = { ...incident, createdAt: Date.now() };
+
+  // Phase 10 — queue for the Supabase offline sync engine (non-blocking)
+  _mgSyncEnqueue('incidents', incidentWithTs);
 
   // 1. Always save locally first (instant, offline-safe).
   //    localStorage keeps the same compressed photos as Firestore,
@@ -862,6 +895,9 @@ async function purgeOldDeletedIncidents(olderThanDays) {
  */
 async function saveJSAToCloud(jsa) {
   const jsaWithTs = { ...jsa, createdAt: Date.now() };
+
+  // Phase 10 — queue for the Supabase offline sync engine (non-blocking)
+  _mgSyncEnqueue('jsas', jsaWithTs);
 
   // Save locally first (instant, offline-safe)
   const local = JSON.parse(localStorage.getItem('mineguard_jsas') || '[]');

@@ -1,0 +1,24 @@
+# Secrets / environment — never commit
+.env
+.env.*
+!.env.example
+
+# Dependencies / build artifacts
+node_modules/
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Supabase CLI local metadata (project link state)
+supabase/.temp/
+
+# Phase 05 legacy-data inventory + mapping output (raw records + payloads = personal data; keep out of git)
+supabase/legacy-inventory/
+supabase/migration-prep/
