@@ -4,6 +4,57 @@ Format: date · change · docs · status.
 
 ---
 
+## 2026-09-10 (session 17) — Phase 05 cutover COMPLETE: fresh-start (ADR-014), safety notices live, client cut over
+
+- **ADR-014 recorded** (owner directive): the Firestore data migration is WAIVED — fresh start in
+  Supabase; the legacy anonymous Firestore channel becomes fallback-only (signed-out users); import
+  prep (ADR-012) stays on disk if the decision is reversed.
+- Migration `20260903000097_phase05_cutover_notices.sql` **applied live**: `safety_notices` +
+  `safety_notice_acks` (org+site scope, broadcast via `site_id` null, per-user idempotent acks,
+  `notices.manage`/org-admin write gate, regulator SELECT, `client_id` offline idempotency) + 2 additive
+  audit triggers → 23 total.
+- Migration `20260903000098_phase05_cutover_notices_fix.sql` **applied live** (probe-driven):
+  `notice_soft_delete(notice_id)` SECURITY DEFINER RPC — direct `PATCH {deleted:true}` 42501s because
+  PostgREST re-checks the SELECT policy on UPDATE…RETURNING (same class as the Phase 07 `Prefer`
+  finding); RPC gated on the catalog `notices.delete` permission.
+- Client: `notices.js` signed-in reads/writes via PostgREST with legacy-shape reverse-mappers (zero UI
+  changes); soft-delete via the RPC; signed-out fallback unchanged.
+- **Evidence:** `scripts/verify-phase05.mjs` (new) **42/42 PASS, self-cleaning** — catalog, two-org RLS
+  matrix, worker denials, site-targeting visibility, ack idempotency/cross-user isolation, broadcast vs
+  site scope, RPC soft-delete + audit capture, regulator scope, `client_id` idempotency. Full regression
+  all-PASS (04/05/06/06c/07/08/09/10/11/12/13, run in subsets); security scan 0 CRITICAL.
+- Probe maintenance: `verify-phase07/08/09.mjs` audit-trigger expectations 21 → 23; transient scratch-org
+  cleanup helpers added after a timed-out suite run collided on `organizations_name_lower_uidx`.
+- Status: Phase 05 COMPLETE (cutover executed; full Firestore retirement = later deletion step requiring
+  explicit owner approval per ADR-014 consequence 3). Standing user action: rotate service-role key +
+  DB password (session 16 incident, SECURITY_CERTIFICATION §2).
+
+## 2026-09-10 (session 16) — Phase 13 COMPLETE: production hardening + security certification, live-verified
+
+- **SECURITY INCIDENT (found by executing TESTING_STRATEGY §5):** `scripts/run-probes.sh` had the live
+  service-role JWT + Supabase DB password committed to git. Remediated in-file (env-injected runner);
+  **rotations REQUIRED (user action, dashboard-only, STILL OPEN)** — checklist in SECURITY_CERTIFICATION §2.
+- New `scripts/security-scan.mjs`: automated secret-leak scan (CRITICAL rules exit 1 → CI fails closed);
+  baseline 0 CRITICAL / 16 HIGH, every HIGH classified-accepted with inline rationale.
+- Durable test suite: `npm test` = security scan + `scripts/run-all-probes.mjs` (all 10 live probes with
+  summary + non-zero exit on failure). TESTING_STRATEGY rollout now has a one-command harness; E2E browser
+  layer remains open.
+- Migration `…096_phase13_hardening.sql` **applied live**: `site_create` enforces active-plan `max_sites`
+  (back-compat unlimited for null cap / no subscription); `regulator_expire_due_grants()` audited idempotent
+  expiry sweep (closes both Phase 12 recorded gaps).
+- **Evidence:** `verify-phase13.mjs` **27/27 PASS self-cleaning** (max_sites cap + upgrade + back-compat;
+  sweep lifecycle incl. idempotency + worker denial + audit capture + expired-grant 0-row reads; Phase 12
+  RPC surface intact); full regression all-PASS (04, 06, 06-cascade, 07, 08, 09, 10, 11 48/48, 12 31/31).
+- **XSS render-path audit added** (`scripts/xss-audit.mjs`, wired into `npm test`): 63 HTML sinks audited,
+  ~30 genuine escapes added in admin.html/app.js/notices.js; allowlist of reviewed-safe interpolations
+  documented in the scanner. SECURITY_CERTIFICATION row 14 closed at the static layer.
+- New `docs/engineering/SECURITY_CERTIFICATION.md` (per-control DEMONSTRATED/ACCEPTED/OPEN with artifacts,
+  incident record, residual risks, production-candidate gates); `PRODUCTION_READINESS.md` re-ticked with
+  evidence; IMPLEMENTATION_STATUS Phase 13 COMPLETE; PROJECT_MASTER phase row 13 COMPLETE.
+- Status: Phase 13 COMPLETE (not VERIFIED-tier — wire `npm test` into CI for that). Remaining open rows:
+  rotations (user), XSS suite, rate limiting, MFA enablement, media re-encode, backups/DR drill; Phase 05
+  cutover remainder (legacy Firestore channel) is the next fixed-order work item.
+
 ## 2026-09-09 (session 15) — Phase 12 COMPLETE: SaaS + enterprise administration, live-verified
 
 - Migration `20260903000094_phase12_saas_enterprise.sql` applied to `vuniwebbrvpgxscdsfei`:

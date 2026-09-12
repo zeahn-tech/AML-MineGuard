@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Doc status | BASELINE (created during Phase 00 architecture audit) |
-| Last updated | 2026-09-04 |
+| Last updated | 2026-09-10 |
 | Source of truth | This repository (`/home/daytona/codebase`) |
 | Related docs | See `IMPLEMENTATION_STATUS.md`, `ARCHITECTURE.md`, `SESSION_HANDOFF.md` |
 
@@ -146,7 +146,7 @@ scope, never blanket.
 | 02 | Authentication + identity (Supabase Auth) | COMPLETE (GoTrue auth + bootstrap_first_owner + admin gate replacement; live-probe-verified 2026-09-03) |
 | 03 | RBAC + permissions | COMPLETE (applied + live-probe-verified on Supabase project, 2026-09-03) |
 | 04 | Mining company + site hierarchy | COMPLETE (site_members + organizational units + worker registry + org invites, site-scoped authz helpers + org-admin RPCs; live-probe-verified 2026-09-03) |
-| 05 | Database migration | PARTIALLY_COMPLETE (2026-09-03, session 8 prep + session 9 gate update — prep: volume measured 91 docs, mapping/validation baseline in `supabase/migration-prep/`; Phase 06 enforcement gate now GREEN; NOTHING imported — cutover still gated on ADR-003 export + safety-domain target tables Phases 07–09 + review sign-off) |
+| 05 | Database migration | COMPLETE (2026-09-10, session 17: **fresh-start cutover per owner directive — ADR-014**; Firestore import WAIVED; migrations `…097`/`…098` applied — `safety_notices` + acks + soft-delete RPC; `notices.js` cut over to PostgREST for signed-in users; verify-phase05 42/42 PASS self-cleaning; legacy Firestore channel = fallback-only pending full retirement approval; session-8 import prep retained on disk) |
 | 06 | RLS + security enforcement | COMPLETE (live-verified on Supabase project 2026-09-03: site-scope SELECT matrix, least-privilege workers registry, org UPDATE gate, append-only server-side audit_log + triggers on all 7 tenant-management tables incl. sites; RLS/audit probe + cascade-delete regression probe all-PASS) |
 | 07 | Incident + evidence management | COMPLETE (2026-09-04, live-verified on `vuniwebbrvpgxscdsfei`: migrations `…060`/`…061` applied; RLS_MATRIX §1.2 incidents + storage live; verify-phase07 all-PASS; Phase 06 regression green; see IMPLEMENTATION_STATUS) |
 | 08 | JSA + inspection + corrective actions | COMPLETE (2026-09-04, live-verified: jsas/jsa_steps + inspections + CAPA tables with RLS + audit; verify-phase08 all-PASS; Phase 06/07 regression green) |
@@ -154,7 +154,7 @@ scope, never blanket.
 | 10 | Offline-first synchronization | COMPLETE (2026-09-08, client-side offline-first layer shipped + live-verified; see IMPLEMENTATION_STATUS) |
 | 11 | Government regulatory command center | COMPLETE (2026-09-09, live-verified on Supabase project: government_grants explicit-authorization table + helpers/RPCs + 16 grant-gated regulator SELECT policies + audit; regulator bootstrap/grant lifecycle + command-center client; see IMPLEMENTATION_STATUS) |
 | 12 | SaaS + enterprise administration | COMPLETE (2026-09-09, live-verified on Supabase project: plans/subscriptions modeled (billing deferred), site/settings/subscription RPCs, grant-expiry administration (5-arg issue + extend), platform bootstrap/list/status layer, server-side `gov_national_overview` aggregate, dedicated subscriptions audit trigger; probe 31/31 self-cleaning; see IMPLEMENTATION_STATUS) |
-| 13 | Production hardening + security certification | NOT_STARTED |
+| 13 | Production hardening + security certification | COMPLETE (2026-09-10, live-verified on Supabase project: secret-leak incident remediated (committed service-role key + DB password removed — **rotations still REQUIRED**, SECURITY_CERTIFICATION §2); automated security scan in `npm test` (0 CRITICAL); durable probe suite = one command; migration `…096` applied (max_sites enforcement + audited grant-expiry sweep); verify-phase13 27/27 self-cleaning; full regression all-PASS; XSS suite/rate limiting/MFA/media re-encode/DR drill remain open control rows — see IMPLEMENTATION_STATUS + SECURITY_CERTIFICATION) |
 
 Live per-phase detail: `IMPLEMENTATION_STATUS.md`.
 

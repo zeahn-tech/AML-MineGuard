@@ -84,7 +84,58 @@ async function fetchNotices() {
 }
 
 // ── Called from firebase.js (added below) ────────────────────
+// Phase 05 cutover: reverse-map a Supabase safety_notices row to the legacy
+// render shape (field parity with the old Firestore docs — no UI changes).
+function _mgSupabaseNoticeToLegacy(r) {
+  return {
+    _id: r.id,
+    supabase_id: r.id,
+    client_id: r.client_id || undefined,
+    title: r.title,
+    message: r.message,
+    type: r.notice_type || 'info',
+    workZone: r.work_zone_text || '',
+    createdBy: r.created_by_text || 'Safety Officer',
+    pinned: r.pinned === true,
+    expires: r.expires_at || null,
+    createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
+    deleted: false,
+    site_id: r.site_id || null,
+    read: false
+  };
+}
+
+async function _mgGetOrgId() {
+  const auth = window.MG_AUTH;
+  if (!auth || !auth.getSession || !auth.getSession()) return null;
+  try {
+    const rows = await auth.fetchMyMemberships();
+    return rows && rows.length ? rows[0].organization_id : null;
+  } catch (e) { return null; }
+}
+
 async function fetchNoticesFromCloud() {
+  // Phase 05 cutover: signed-in users read Supabase safety_notices (RLS).
+  const auth = window.MG_AUTH;
+  if (auth && auth.fetchSafetyNotices && auth.getSession && auth.getSession()) {
+    try {
+      const orgId = await _mgGetOrgId();
+      if (orgId) {
+        const [rows, acks] = await Promise.all([
+          auth.fetchSafetyNotices(orgId),
+          auth.fetchMyNoticeAcks ? auth.fetchMyNoticeAcks(orgId) : Promise.resolve([])
+        ]);
+        const ackedSet = new Set((acks || []).map(a => a.notice_id));
+        const legacy = (rows || []).map(_mgSupabaseNoticeToLegacy)
+          .map(n => { if (ackedSet.has(n.supabase_id)) n.read = true; return n; });
+        saveNoticesLocal(legacy);
+        return legacy;
+      }
+    } catch (e) {
+      console.warn('[Notices] Supabase fetch failed, using local cache:', e.message);
+      return loadNoticesLocal();
+    }
+  }
   if (typeof restQuery !== 'function') return loadNoticesLocal();
   try {
     const docs = await restQuery('notices', 200);
@@ -102,6 +153,28 @@ async function saveNoticeToCloud(notice) {
   const local = loadNoticesLocal();
   local.unshift(full);
   saveNoticesLocal(local);
+
+  // Phase 05 cutover: signed-in users write Supabase safety_notices ONLY.
+  const auth = window.MG_AUTH;
+  if (auth && auth.createSafetyNotice && auth.getSession && auth.getSession()) {
+    try {
+      const orgId = await _mgGetOrgId();
+      if (orgId) {
+        await auth.createSafetyNotice(orgId, {
+          client_id: window.MG_STORE ? window.MG_STORE.newClientId('notice') : null,
+          title: full.title,
+          message: full.message,
+          notice_type: (full.type === 'critical' || full.type === 'warning') ? full.type : 'info',
+          work_zone: full.workZone || null,
+          created_by_text: full.createdBy || null
+        });
+        await fetchNoticesFromCloud();  // refresh from the authoritative store
+        return full.client_id || null;
+      }
+    } catch (e) {
+      console.error('[Notices] Supabase save failed:', e.message);
+    }
+  }
 
   if (window.MG && window.MG.online && typeof restAdd === 'function') {
     try {
@@ -124,6 +197,16 @@ async function deleteNoticeCloud(id) {
   const local = loadNoticesLocal();
   const item  = local.find(n => n._id === id || n.noticeId === id);
   if (item) { item.deleted = true; saveNoticesLocal(local); }
+  // Phase 05 cutover: signed-in users soft-delete in Supabase via the
+  // notices.delete-gated RPC (direct PATCH is blocked by the SELECT-policy
+  // re-check — see scripts/verify-phase05.mjs finding F3).
+  const auth = window.MG_AUTH;
+  if (auth && auth.deleteSafetyNotice && auth.getSession && auth.getSession()
+      && item && item.supabase_id) {
+    try { await auth.deleteSafetyNotice(item.supabase_id); return; } catch (e) {
+      console.warn('[Notices] Supabase delete failed:', e.message);
+    }
+  }
   if (window.MG && window.MG.online && typeof restUpdate === 'function' && id) {
     try { await restUpdate('notices', id, { deleted: true }); } catch(e) {}
   }
@@ -143,8 +226,17 @@ async function markNoticeRead(id) {
 // ── Acknowledge an emergency notice ──────────────────────────
 async function acknowledgeNotice(id) {
   markAckLocal(id);
-  window.MG_NOTICES.all.forEach(n => { if ((n._id||n.noticeId) === id) n.acknowledged = true; });
-  if (window.MG && window.MG.online && typeof restUpdate === 'function' && id) {
+  const notice = window.MG_NOTICES.all.find(n => (n._id||n.noticeId) === id);
+  if (notice) notice.acknowledged = true;
+  // Phase 05 cutover: signed-in users ack via the per-user safety_notice_acks
+  // row (unique(notice,user) makes re-acks idempotent) — no racy counters.
+  const auth = window.MG_AUTH;
+  if (auth && auth.ackSafetyNotice && auth.getSession && auth.getSession() && notice && notice.supabase_id) {
+    try {
+      const orgId = await _mgGetOrgId();
+      if (orgId) await auth.ackSafetyNotice(notice.supabase_id, orgId, notice.client_id || null);
+    } catch (e) { console.warn('[Notices] Supabase ack failed:', e.message); }
+  } else if (window.MG && window.MG.online && typeof restUpdate === 'function' && id) {
     try { await restUpdate('notices', id, { ackCount: ((window.MG_NOTICES.all.find(n=>(n._id||n.noticeId)===id)||{}).ackCount || 0) + 1 }); } catch(e) {}
   }
   dismissEmergencyOverlay();
@@ -216,7 +308,7 @@ function showEmergencyOverlay(notice) {
         &nbsp;·&nbsp; ${formatTime(notice.createdAt)}
         ${notice.workZone ? `&nbsp;·&nbsp; 📍 ${escapeHtml(notice.workZone)}` : ''}
       </div>
-      <button class="em-ack-btn" onclick="acknowledgeNotice('${id}')">
+      <button class="em-ack-btn" onclick="acknowledgeNotice('${escapeHtml(id)}')">
         ✅ I Acknowledge — Tap to Dismiss
       </button>
       <div class="em-sub">This alert remains visible until acknowledged</div>
@@ -281,7 +373,7 @@ function renderNoticesTab() {
       <div class="notices-empty">
         <div style="font-size:42px;margin-bottom:12px;">📋</div>
         <div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">No Notices</div>
-        <div style="font-size:13px;color:var(--text-muted);">${noticeFilter !== 'all' ? 'No ' + noticeFilter + ' notices found.' : 'No safety notices at this time.'}</div>
+        <div style="font-size:13px;color:var(--text-muted);">${noticeFilter !== 'all' ? 'No ' + escapeHtml(noticeFilter) + ' notices found.' : 'No safety notices at this time.'}</div>
       </div>`;
     return;
   }
@@ -305,7 +397,7 @@ function renderNoticeCard(n) {
 
   return `
   <div class="notice-card ${read ? 'nc-read' : 'nc-unread'} nc-${n.type||'info'} ${pin ? 'nc-pinned' : ''}"
-       onclick="openNoticeDetail('${id}')" role="button" tabindex="0">
+       onclick="openNoticeDetail('${escapeHtml(id)}')" role="button" tabindex="0">
     <div class="nc-inner">
       ${pin ? '<div class="nc-pin-flag">📌 PINNED NOTICE</div>' : ''}
       <div class="nc-header">
@@ -383,7 +475,7 @@ function openNoticeDetail(id) {
         </div>` : ''}
 
       ${notice.type === 'critical' && !notice.acknowledged ? `
-        <button class="nm-ack-btn" onclick="acknowledgeNotice('${id}');closeNoticeModal();">
+        <button class="nm-ack-btn" onclick="acknowledgeNotice('${escapeHtml(id)}');closeNoticeModal();">
           ✅ ACKNOWLEDGE — I HAVE READ THIS ALERT
         </button>` : ''}
 
@@ -408,7 +500,7 @@ function updateLastSynced() {
   const dotColor = online ? '#2ec4b6' : '#ff8c00';
   el.innerHTML = `
     <span class="notices-sync-dot" style="background:${dotColor};"></span>
-    <span>${ts ? 'Synced ' + ts : (online ? 'Syncing...' : 'Offline')}</span>`;
+    <span>${ts ? 'Synced ' + escapeHtml(ts) : (online ? 'Syncing...' : 'Offline')}</span>`;
 }
 
 function setNoticeFilter(f, btn) {

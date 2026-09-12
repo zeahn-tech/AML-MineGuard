@@ -244,6 +244,10 @@ async function main() {
     report(smStatuses.length === 1 && smStatuses[0] === "removed" ? "PASS" : "FAIL", "org_remove_member also withdraws site memberships", JSON.stringify(smStatuses));
     const r4 = await rpc("org_add_member", { p_organization_id: createdOrgId, p_user_id: siteMgr.user.id, p_role: "member" }, admin.access_token);
     report(r4.status === 204 ? "PASS" : "FAIL", "admin: re-add removed member OK (upsert reactivates)", `HTTP ${r4.status}`);
+    // org_remove_member withdrew siteMgr's site membership (documented behavior);
+    // restore it so the later workers-registry read matches the original setup.
+    const smReassign = await rpc("site_assign_member", { p_organization_id: createdOrgId, p_site_id: siteA, p_user_id: siteMgr.user.id, p_role: "site_manager" }, admin.access_token);
+    report(smReassign.status === 204 || smReassign.status === 200 ? "PASS" : "FAIL", "admin: site_assign_member restores siteMgr@A after re-add", `HTTP ${smReassign.status}`);
 
     // org_list_members visibility (emails)
     const list = await rpc("org_list_members", { p_organization_id: createdOrgId }, admin.access_token);

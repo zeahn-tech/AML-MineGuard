@@ -182,9 +182,14 @@ async function saveEmergencySOSCloud(state) {
       updatedAt: Date.now()
     };
 
-    // Phase 10 — queue for the Supabase offline sync engine (non-blocking)
-    _mgSyncEnqueue('emergency_events', payload);
+    // Phase 05 cutover (ADR-014): signed-in users write the emergency event
+    // to Supabase ONLY (priority-queued; emergency-first drain ordering).
+    if (window.MG_AUTH && window.MG_AUTH.getSession && window.MG_AUTH.getSession()) {
+      const clientId = await _mgSyncEnqueue('emergency_events', payload);
+      return clientId || null;
+    }
 
+    // Signed-out path — legacy Firestore mirror (identity optional for workers).
     const ref = await restAdd(COL_SOS, payload);
     return ref;
   } catch (err) {
@@ -511,13 +516,18 @@ function detachAllListeners() {
 // payloads to the Phase 07–09 tables with client_id idempotency. Firestore
 // remains the legacy mirror; Supabase is the authoritative tenant store.
 // Non-blocking: failures only warn — the Firebase path is never degraded.
+// Phase 05 cutover (ADR-014 fresh-start): the Supabase offline sync engine
+// IS the production write path for signed-in users. `_mgSyncEnqueue` queues
+// the mutation and DRAINS immediately; returns the server client_id on
+// success, null when signed out (legacy local-only path) or on transport
+// failure (the record stays in the outbox and retries — never silent loss).
 async function _mgSyncEnqueue(entity, payload) {
   try {
     const engine = window.MG_SYNC_ENGINE;
     const auth   = window.MG_AUTH;
-    if (!engine || !auth || !auth.getSession) return;
+    if (!engine || !auth || !auth.getSession) return null;
     const session = auth.getSession();
-    if (!session || !session.access_token) return; // signed out → Firestore-only
+    if (!session || !session.access_token) return null; // signed out → local-only
     const withClient = {
       ...payload,
       client_id: payload.client_id || (window.MG_STORE ? window.MG_STORE.newClientId() : undefined)
@@ -525,9 +535,16 @@ async function _mgSyncEnqueue(entity, payload) {
     const res = await engine.submit(entity, 'insert', withClient, {
       priority: entity.indexOf('emergency') === 0 ? 100 : 0
     });
-    console.log('[MineGuard] Offline sync enqueued:', entity, res.client_id);
+    // Drain now (online case); offline the record waits in the outbox and
+    // the heartbeat/connectivity handlers drain it later — never silent loss.
+    if (navigator.onLine !== false && engine.drain) {
+      Promise.resolve(engine.drain()).catch(function () {});
+    }
+    console.log('[MineGuard] Supabase sync:', entity, res.client_id);
+    return res.client_id || null;
   } catch (err) {
-    console.warn('[MineGuard] Offline sync enqueue skipped:', err.message);
+    console.warn('[MineGuard] Supabase sync queued (will retry):', entity, err.message);
+    return null;
   }
 }
 
@@ -543,9 +560,6 @@ async function _mgSyncEnqueue(entity, payload) {
 async function saveIncidentToCloud(incident) {
   const incidentWithTs = { ...incident, createdAt: Date.now() };
 
-  // Phase 10 — queue for the Supabase offline sync engine (non-blocking)
-  _mgSyncEnqueue('incidents', incidentWithTs);
-
   // 1. Always save locally first (instant, offline-safe).
   //    localStorage keeps the same compressed photos as Firestore,
   //    since compression happens in app.js before this is called.
@@ -553,7 +567,16 @@ async function saveIncidentToCloud(incident) {
   local.unshift(incidentWithTs);
   localStorage.setItem('mineguard_incidents', JSON.stringify(local));
 
-  // 2. Wait for connectivity check (max 6s)
+  // Phase 05 cutover (ADR-014): signed-in users write to Supabase ONLY —
+  // the Firestore mirror is retired. The sync engine is authoritative:
+  // online it drains immediately; offline it retries from the outbox.
+  if (window.MG_AUTH && window.MG_AUTH.getSession && window.MG_AUTH.getSession()) {
+    const clientId = await _mgSyncEnqueue('incidents', incidentWithTs);
+    updateSyncBanner(clientId ? 'synced' : 'pending');
+    return clientId;   // Supabase client_id (not a Firestore doc id)
+  }
+
+  // Signed-out path (identity optional for workers) — local-only storage.
   const isOnline = await Promise.race([
     window.MG.ready,
     new Promise(r => setTimeout(() => r(false), 6000))
@@ -618,7 +641,49 @@ async function saveIncidentToCloud(incident) {
  * Soft-deleted incidents (deleted: true) are excluded — use
  * fetchDeletedIncidents() to view/restore them.
  */
+// Phase 05 cutover: reverse-map a Supabase incidents row to the legacy
+// render shape consumed by app.js/admin.html (field-for-field parity with
+// the old Firestore docs so no UI code changes).
+function _mgSupabaseIncidentToLegacy(r) {
+  return {
+    _id: r.client_id || r.id,
+    client_id: r.client_id || undefined,
+    supabase_id: r.id,
+    type: r.incident_type || 'other',
+    severity: r.severity || 'low',
+    status: (r.status || 'SUBMITTED').toLowerCase() === 'resolved' ? 'resolved' : 'open',
+    name: r.reported_by_name || 'Unknown',
+    badge: r.badge || '',
+    dept: r.dept_text || '',
+    location: r.location_text || '',
+    description: r.description || '',
+    action: r.immediate_action || '',
+    witnesses: r.witnesses_text ? String(r.witnesses_text).split(';').map(w => w.trim()).filter(Boolean) : [],
+    datetime: r.incident_datetime || '',
+    savedAt: r.saved_at ? new Date(r.savedAt || r.saved_at).getTime() : (r.created_at ? new Date(r.created_at).getTime() : Date.now()),
+    createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
+    deleted: r.deleted === true,
+    site_id: r.site_id || null,
+    photos: []   // Phase 07 evidence lives in object storage; legacy base64 not shown
+  };
+}
+
 async function fetchIncidents() {
+  // Phase 05 cutover: signed-in users read from Supabase (RLS-scoped).
+  const auth = window.MG_AUTH;
+  if (auth && auth.fetchIncidentsOrg && auth.getSession && auth.getSession()) {
+    try {
+      const orgRows = await auth.fetchMyMemberships();
+      const orgId = orgRows && orgRows.length ? orgRows[0].organization_id : null;
+      if (orgId) {
+        const rows = await auth.fetchIncidentsOrg(orgId);
+        return (rows || []).map(_mgSupabaseIncidentToLegacy);
+      }
+    } catch (err) {
+      console.error('[MineGuard] Supabase incidents read failed:', err.message);
+      return [];
+    }
+  }
   const isOnline = await Promise.race([
     window.MG.ready,
     new Promise(r => setTimeout(() => r(false), 6000))
@@ -896,14 +961,19 @@ async function purgeOldDeletedIncidents(olderThanDays) {
 async function saveJSAToCloud(jsa) {
   const jsaWithTs = { ...jsa, createdAt: Date.now() };
 
-  // Phase 10 — queue for the Supabase offline sync engine (non-blocking)
-  _mgSyncEnqueue('jsas', jsaWithTs);
-
   // Save locally first (instant, offline-safe)
   const local = JSON.parse(localStorage.getItem('mineguard_jsas') || '[]');
   local.unshift(jsaWithTs);
   localStorage.setItem('mineguard_jsas', JSON.stringify(local));
 
+  // Phase 05 cutover (ADR-014): signed-in users write to Supabase ONLY.
+  if (window.MG_AUTH && window.MG_AUTH.getSession && window.MG_AUTH.getSession()) {
+    const clientId = await _mgSyncEnqueue('jsas', jsaWithTs);
+    updateSyncBanner(clientId ? 'synced' : 'pending');
+    return clientId;
+  }
+
+  // Signed-out path — legacy Firestore mirror (identity optional for workers).
   const isOnline = await Promise.race([
     window.MG.ready,
     new Promise(r => setTimeout(() => r(false), 6000))
@@ -937,7 +1007,42 @@ async function saveJSAToCloud(jsa) {
 /**
  * One-shot fetch of all NON-DELETED JSAs (admin use / manual refresh).
  */
+// Phase 05 cutover: reverse-map a Supabase jsas row to the legacy shape.
+function _mgSupabaseJsaToLegacy(r) {
+  return {
+    _id: r.client_id || r.id,
+    client_id: r.client_id || undefined,
+    supabase_id: r.id,
+    task: r.task || 'Untitled task',
+    worker: r.worker_text || r.reported_by_name || '',
+    supervisor: r.supervisor_text || '',
+    location: r.location_text || '',
+    date: r.date || '',
+    ppeSelected: Array.isArray(r.ppe) ? r.ppe : [],
+    status: r.status || 'SUBMITTED',
+    savedAt: r.saved_at ? new Date(r.saved_at).getTime() : (r.created_at ? new Date(r.created_at).getTime() : Date.now()),
+    createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
+    deleted: r.deleted === true,
+    site_id: r.site_id || null
+  };
+}
+
 async function fetchJSAs() {
+  // Phase 05 cutover: signed-in users read from Supabase (RLS-scoped).
+  const auth = window.MG_AUTH;
+  if (auth && auth.fetchJsasOrg && auth.getSession && auth.getSession()) {
+    try {
+      const orgRows = await auth.fetchMyMemberships();
+      const orgId = orgRows && orgRows.length ? orgRows[0].organization_id : null;
+      if (orgId) {
+        const rows = await auth.fetchJsasOrg(orgId);
+        return (rows || []).map(_mgSupabaseJsaToLegacy);
+      }
+    } catch (err) {
+      console.error('[MineGuard] Supabase JSAs read failed:', err.message);
+      return [];
+    }
+  }
   const isOnline = await Promise.race([
     window.MG.ready,
     new Promise(r => setTimeout(() => r(false), 6000))

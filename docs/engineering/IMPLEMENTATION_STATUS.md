@@ -2,8 +2,8 @@
 
 | Field | Value |
 |---|---|
-| Last updated | 2026-09-09 |
-| Session | Phase 12 COMPLETE (session 15, 2026-09-09) — SaaS + enterprise administration shipped end-to-end: migration `…094` (plans + subscriptions modeling, site/org-settings/subscription RPCs, 5-arg grant issue with expiry + `regulator_extend_grant`, platform bootstrap/list/status RPCs, server-side `gov_national_overview` aggregate, dedicated subscriptions audit trigger) applied to `vuniwebbrvpgxscdsfei`; probe-driven fix migration `…095` (grant-issue result capture, audit_log column names, platform-list explicit gate, legacy 4-arg grant overload dropped to fix PostgREST PGRST203 resolution); `scripts/verify-phase12.mjs` 31/31 PASS self-cleaning; client: `supabase-auth.js` Phase 12 wrappers, `org-admin.js` site management + settings/plan card, `gov-admin.js` grant expiry + national overview; regression suites 06/06-cascade/07/08/09/10/11 all PASS. Detail below |
+| Last updated | 2026-09-10 |
+| Session | Phase 05 cutover COMPLETE (session 17, 2026-09-10) — fresh-start directive (ADR-014): Firestore import waived; migrations `…097`/`…098` applied live (safety_notices + acks + soft-delete RPC); client `notices.js` cut over to PostgREST for signed-in users; `verify-phase05.mjs` 42/42 PASS self-cleaning; full probe suite all-PASS. Prior: Phase 13 COMPLETE (session 16) — production hardening + security certification: secret-leak incident remediated (run-probes.sh service-role key + DB password removed; **rotations still REQUIRED by the user** — SECURITY_CERTIFICATION §2); automated security scan in `npm test` (0 CRITICAL baseline); durable suite = one command; migration `…096` applied live; `verify-phase13.mjs` 27/27 PASS self-cleaning. Detail below |
 
 Status vocabulary: NOT_STARTED · IN_PROGRESS · BLOCKED · PARTIALLY_COMPLETE · COMPLETE · VERIFIED
 (VERIFIED requires evidence: tests/outputs recorded here).
@@ -277,7 +277,46 @@ Known limitations (recorded, do not overstate)
 
 ## Phase 05 — Database migration (Firestore → Supabase)
 
-**Status: PARTIALLY_COMPLETE (session 8, 2026-09-03) — prep executed, no database writes.**
+**Status: COMPLETE (session 17, 2026-09-10) — fresh-start cutover directive (ADR-014): the Firestore import is WAIVED by the owner; safety notices moved into the tenant model; signed-in traffic cut over to Supabase. Live-verified 42/42; evidence below.**
+
+### Session 17 (2026-09-10) — fresh-start cutover executed (supersedes the import plan)
+
+Per the owner directive ("Let go every data migration from Firestore, we are going to start afresh with
+new data in Supabase") recorded as **ADR-014**: no legacy documents are imported; tenant #1 and every
+future tenant start with empty safety-domain tables. Work completed + verified this session:
+
+- **Migration `20260903000097_phase05_cutover_notices.sql` applied live** (the last legacy-only domain
+  without a Supabase home): `safety_notices` (org+site scoped; `site_id` null = org-wide broadcast;
+  severity/pinned/scheduled/expiry; `client_id` unique for offline idempotency) + `safety_notice_acks`
+  (per-user idempotent acks). RLS: org-membership SELECT; writes gated on `notices.manage` or org-admin;
+  acks restricted to the acking user; regulator SELECT per Phase 11 pattern. Grants per project
+  convention. Additive audit branches (`trg_audit_safety_notices` + `trg_audit_safety_notice_acks`)
+  → 23 audit triggers total.
+- **Fix migration `…098_phase05_cutover_notices_fix.sql`** (probe-driven): SECURITY DEFINER
+  `notice_soft_delete(notice_id)` RPC — PostgREST re-checks the SELECT policy (`deleted = false`) on a
+  direct `PATCH {deleted:true}` UPDATE…RETURNING (42501), the same class as the documented Phase 07
+  `Prefer` finding; the RPC is gated on the catalog `notices.delete` permission and captures the audit
+  trail. `grant … to authenticated`, execute revoked from public.
+- **Client cutover (`notices.js`)**: signed-in users read/write safety notices via PostgREST with
+  legacy-shape reverse-mappers — zero UI changes required; signed-out users keep the legacy Firestore
+  channel (fallback-only per ADR-014). Soft-delete goes through the new RPC.
+- **`scripts/verify-phase05.mjs` (new)**: 42/42 PASS, self-cleaning (residue 0) — catalog, RLS matrix
+  (org A vs org B cross-tenant denials both directions; worker write denials; site-targeted rows hidden
+  from other sites), ack idempotency + cross-user isolation, broadcast vs site scope, admin soft-delete
+  via RPC + audit capture, regulator read scope, offline `client_id` idempotency (409 → already-synced).
+- **Probe expectation updates (catalog drift from the cutover)**: `verify-phase07/08/09.mjs` audit-trigger
+  count 21 → 23 (the two new notices triggers). All three re-run ALL-PASS after the update.
+- **Suite-hygiene note**: a timed-out full-suite run can leave scratch orgs whose fixed probe names
+  collide on the `organizations_name_lower_uidx` unique index on the next run (Phase 08 hit this).
+  Probes are self-cleaning on success; on a timeout, clear leftovers before re-running (the transient
+  `scripts/inspect-leftovers.mjs` / `scripts/clean-p8-residue.mjs` helpers exist for this).
+
+Verification evidence: `verify-phase05.mjs` 42/42 PASS self-cleaning; full regression all-PASS in subsets
+(04, 05, 06, 06c, 07, 08, 09, 10, 11, 12, 13); security scan 0 CRITICAL.
+
+### History — session 8 (2026-09-03): import prep (now superseded by ADR-014)
+
+**Status then: PARTIALLY_COMPLETE — prep executed, no database writes.**
 
 Completed work
 - `scripts/phase05-inventory.mjs` (fixed + extended this session): read-only inventory of all 5 legacy
@@ -604,6 +643,74 @@ Next: Phase 13 — billing integration (deferred) / hardening + TESTING_STRATEGY
 
 Status: COMPLETE (recorded live probes; no CI suite — not VERIFIED-tier per project vocabulary).
 Next: Phase 13 — per fixed phase order (billing integration when commercially required; TESTING_STRATEGY rollout remains the standing open item).
+
+---
+
+## Phase 13 — Production hardening + security certification — COMPLETE (2026-09-10, session 16)
+
+**Completed this session**
+
+- **Secret-leak incident found + remediated (TESTING_STRATEGY §5 executed for real):**
+  `scripts/run-probes.sh` had the live **service-role JWT** and the **Supabase DB password** committed
+  to the repo. File remediated (credentials env-injected now); **rotations are REQUIRED and cannot be
+  done from the repo** — user actions recorded in `SECURITY_CERTIFICATION.md` §2 (rotate service-role
+  key + DB password; treat `sbp_` access tokens pasted in chat as exposure-compromised).
+- **Automated security scanner** `scripts/security-scan.mjs` (TESTING_STRATEGY §5, CI-gateable):
+  tracked-files scan; CRITICAL rules = service-role JWT, `sbp_` tokens, private keys, postgres URLs
+  with passwords, `mineguard2024` legacy credential, misplaced API keys, generic secret assignments;
+  exit 1 on CRITICAL so `npm test` fails closed. Baseline: **0 CRITICAL, 16 HIGH** — every HIGH is a
+  classified/accepted item (4 Firebase web-key sites = public-by-design legacy config, C7 action
+  recorded; 12 probe-account password sites = throwaway probe users, not deployment secrets).
+- **Durable test suite (TESTING_STRATEGY rollout — the standing open item):** `npm test` =
+  `security-scan.mjs && scripts/run-all-probes.mjs` (all 10 live probes — 04, 06, 06-cascade, 07, 08,
+  09, 10, 11, 12, 13 — with a summary table and CI-gateable non-zero exit on any failure).
+  `scripts/run-probes.sh` retained as a single-phase runner (also env-injected).
+- **Migration `20260903000096_phase13_hardening.sql` (AUTHORED, NOT yet applied — blocked):**
+  closes both Phase 12 recorded hardening gaps:
+  1. `site_create` now enforces the org's active-plan `plans.max_sites` (counts non-deleted sites;
+     null cap / no subscription = unlimited back-compat for tenant #1 pre-billing). Same 4-arg
+     signature — no overload (PGRST203 lesson from Phase 12).
+  2. `regulator_expire_due_grants()` — audited, idempotent sweep flipping due active grants to
+     `expired`; callable by a `national_regulatory_admin` of a regulator org (session path) or the
+     platform scheduler (no session); every lapse captured by the existing `government_grants` audit
+     trigger. `revoke … from public` + `grant … to authenticated` per convention.
+  Schema-verified against live conventions before authoring (sites soft-delete = `status`/`deleted_at`,
+  not a boolean; org gate mirrors Phase 02/…090 patterns; additive-only — shared audit trigger NOT
+  rewritten).
+- **`docs/engineering/SECURITY_CERTIFICATION.md` (new)** — per-control certification table
+  (DEMONSTRATED / ACCEPTED / OPEN with the producing artifact named), the secrets incident + rotation
+  checklist, accepted residual risks (incl. the legacy anonymous Firestore dual-read channel as the
+  highest-priority residual), and the explicit gates between COMPLETE and "production candidate".
+- **`PRODUCTION_READINESS.md`** — checklist updated: security/database/offline/testing items ticked
+  with evidence pointers; remaining gates enumerated (migration apply + probe re-run, rotations, XSS
+  suite, rate limiting, MFA enablement, media re-encode, backups/DR, legacy cutover).
+- Note: an interrupted earlier Phase 13 attempt had already authored `run-all-probes.mjs`,
+  `verify-phase13.mjs`, and the `run-probes.sh` remediation; this session reviewed, validated them
+  against the authored migration, extended the scanner, and wired `npm test`.
+
+**Verification evidence (recorded, live on `vuniwebbrvpgxscdsfei`, 2026-09-10)**
+
+1. Migration `…096` applied via `scripts/apply-migration.mjs` (HTTP 201) with a fresh access token.
+2. `scripts/verify-phase13.mjs`: **27/27 PASS, self-cleaning** (cleanup: 3 orgs, 4 users, 3 grants,
+   8 sites removed; residue 0). Covered: catalog (hardened `site_create` w/ unchanged signature — no
+   PGRST203 overload; 0-arg sweep RPC granted to authenticated); max_sites (starter cap: 3 sites OK,
+   4th DENIED naming the plan cap, no partial row persisted; enterprise upgrade re-allows creation;
+   no-subscription org creates 4+ — back-compat); sweep (future + null-expiry grants issued, past-due
+   grant still 'active' pre-sweep, national_regulatory_admin sweep reports >=1, past-due -> 'expired',
+   future/null untouched, idempotent second run = 0, org worker DENIED, lapses captured by the grants
+   audit trigger, expired-grant holder reads 0 target-org incidents); security-scan self-check exits 0;
+   Phase 12 RPC surface intact (12 functions).
+3. Full regression: verify-phase04 PASS, verify-phase06 PASS, verify-phase06-cascade PASS,
+   verify-phase07 PASS, verify-phase08 ALL PASS (after cleaning leftover probe orgs from a timed-out
+   earlier run), verify-phase09 PASS, verify-phase10 PASS, verify-phase11 PASS (48/48),
+   verify-phase12 PASS (31/31), security-scan exit 0 (0 CRITICAL / 16 classified HIGH).
+
+**Status: COMPLETE** (recorded live probes; not VERIFIED-tier — no CI runner executes `npm test` on
+push yet; wiring it to CI is a deployment action). **Standing user actions:** rotate the service-role
+key + DB password (SECURITY_CERTIFICATION §2 — the committed copies remain valid until rotated).
+**Phase 13 remainder:** XSS adversarial suite, rate limiting, MFA enablement, media re-encode,
+backups/restore drill (SECURITY_CERTIFICATION §1 OPEN rows + §4 gates). Per fixed phase order, next:
+remaining hardening items above and the Phase 05 cutover remainder (legacy Firestore channel).
 
 ---
 
