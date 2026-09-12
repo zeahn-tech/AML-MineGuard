@@ -155,3 +155,19 @@ theft/session hijack, XSS → data exfiltration, spoofed audit, media exfiltrati
 queue forgery/replay, emergency-channel abuse (spoofed SOS), regulator over-reach (over-broad cross-org
 access), insider admin abuse. Tests for each class are listed in `TESTING_STRATEGY.md`; statuses tracked in
 `PRODUCTION_READINESS.md`.
+
+### 2.9 Phase 13 hardening additions (2026-09-10)
+- **Repo secret-leak guard:** `scripts/security-scan.mjs` scans all tracked files for service-role JWTs,
+  `sbp_` access tokens, private keys, postgres URLs with passwords, the legacy `mineguard2024` credential,
+  and misplaced API keys — CRITICAL findings exit 1 (wired into `npm test`, fails closed). Classification
+  (Firebase web key = public-by-design; probe passwords = throwaway dev users) + the committed-credentials
+  incident record and REQUIRED rotations live in `SECURITY_CERTIFICATION.md` §2/§3/§5.
+- **SaaS limit enforcement:** `site_create` now enforces the org's active-plan `plans.max_sites`
+  server-side (migration `…096`); unlimited for null caps / no active subscription (back-compat).
+- **Grant lifecycle completion:** `regulator_expire_due_grants()` (migration `…096`) is the audited,
+  idempotent expiry sweep for `government_grants` — due active grants flip to `expired` with every lapse
+  captured by the existing audit trigger; callable by a national_regulatory_admin or the platform
+  scheduler. Read-time expiry exclusion (Phase 11) remains the enforcement point; the sweep keeps the
+  records honest for administration/audit.
+- Remaining OPEN control rows (XSS suite, rate limiting, MFA enablement, media re-encode) are tracked in
+  `SECURITY_CERTIFICATION.md` §1 with `PRODUCTION_READINESS.md` gates.

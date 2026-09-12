@@ -510,6 +510,82 @@
     return rpc("gov_national_overview", {});
   }
 
+  // ---- Phase 05 cutover: safety notices + safety-domain org reads ---------
+  // Fresh-start directive (ADR-014): these reads/writes ARE the production
+  // data path now — RLS scopes everything to the caller's org.
+  function fetchSafetyNotices(orgId) {
+    if (!orgId) return Promise.resolve([]);
+    return pgGet("/safety_notices?select=id,site_id,client_id,title,message,notice_type,work_zone_text,created_by_text,pinned,expires_at,created_at&organization_id=eq." + encodeURIComponent(orgId) + "&deleted=eq.false&order=created_at.desc&limit=100");
+  }
+  function createSafetyNotice(orgId, n) {
+    var s = getSession();
+    if (!s || !s.access_token) return Promise.reject(new Error("Not signed in"));
+    return fetch(BASE + "/rest/v1/safety_notices", {
+      method: "POST",
+      headers: pgHeaders(s.access_token),
+      body: JSON.stringify({
+        organization_id: orgId,
+        site_id: n.site_id || null,
+        client_id: n.client_id || null,
+        title: n.title,
+        message: n.message,
+        notice_type: n.notice_type || "info",
+        work_zone_text: n.work_zone || n.work_zone_text || null,
+        created_by_text: n.created_by_text || null,
+        lang: n.lang || "en",
+        pinned: n.pinned === true,
+        expires_at: n.expires_at || null
+      })
+    }).then(function (res) {
+      if (res.status === 201) return null;
+      return res.text().then(function (t) { throw new Error("notice create " + res.status + ": " + t.slice(0, 160)); });
+    });
+  }
+  // Phase 05 cutover: soft-delete via SECURITY DEFINER RPC — a direct PATCH
+  // {deleted:true} is impossible (PostgREST re-checks the SELECT policy
+  // deleted=false on the returning row → 42501; Phase 07-class finding).
+  function deleteSafetyNotice(noticeId) {
+    return rpc("notice_soft_delete", { p_notice_id: noticeId });
+  }
+  function updateSafetyNotice(noticeId, patch) {
+    var s = getSession();
+    if (!s || !s.access_token) return Promise.reject(new Error("Not signed in"));
+    return fetch(BASE + "/rest/v1/safety_notices?id=eq." + encodeURIComponent(noticeId), {
+      method: "PATCH",
+      headers: pgHeaders(s.access_token),
+      body: JSON.stringify(patch)
+    }).then(function (res) {
+      if (res.status === 204) return true;
+      throw new Error("notice update " + res.status);
+    });
+  }
+  function ackSafetyNotice(noticeId, orgId, clientId) {
+    var s = getSession();
+    if (!s || !s.access_token) return Promise.reject(new Error("Not signed in"));
+    return fetch(BASE + "/rest/v1/safety_notice_acks", {
+      method: "POST",
+      headers: pgHeaders(s.access_token),
+      body: JSON.stringify({ notice_id: noticeId, organization_id: orgId, client_id: clientId || null })
+    }).then(function (res) {
+      if (res.status === 201) return true;      // first ack
+      if (res.status === 409) return true;      // idempotent re-ack (unique)
+      return res.text().then(function (t) { throw new Error("ack " + res.status + ": " + t.slice(0, 120)); });
+    });
+  }
+  function fetchMyNoticeAcks(orgId) {
+    if (!orgId) return Promise.resolve([]);
+    return pgGet("/safety_notice_acks?select=notice_id,acked_at&organization_id=eq." + encodeURIComponent(orgId));
+  }
+  // Org-wide safety-domain reads for the admin dashboard (RLS-scoped).
+  function fetchIncidentsOrg(orgId) {
+    if (!orgId) return Promise.resolve([]);
+    return pgGet("/incidents?select=id,site_id,client_id,incident_type,severity,status,incident_datetime,location_text,reported_by_name,badge,dept_text,description,immediate_action,witnesses_text,saved_at,created_at,deleted&organization_id=eq." + encodeURIComponent(orgId) + "&order=created_at.desc&limit=200");
+  }
+  function fetchJsasOrg(orgId) {
+    if (!orgId) return Promise.resolve([]);
+    return pgGet("/jsas?select=id,site_id,client_id,task,worker_text,supervisor_text,location_text,date,status,ppe,saved_at,created_at,deleted&organization_id=eq." + encodeURIComponent(orgId) + "&order=created_at.desc&limit=200");
+  }
+
   window.MG_AUTH = {
     signUp: signUp,
     signInWithPassword: signInWithPassword,
@@ -565,6 +641,15 @@
     platformListOrganizations: platformListOrganizations,
     platformUpdateOrganizationStatus: platformUpdateOrganizationStatus,
     fetchNationalOverview: fetchNationalOverview,
+    // ---- Phase 05 cutover: safety notices + safety-domain reads ----------
+    fetchSafetyNotices: fetchSafetyNotices,
+    createSafetyNotice: createSafetyNotice,
+    updateSafetyNotice: updateSafetyNotice,
+    deleteSafetyNotice: deleteSafetyNotice,
+    ackSafetyNotice: ackSafetyNotice,
+    fetchMyNoticeAcks: fetchMyNoticeAcks,
+    fetchIncidentsOrg: fetchIncidentsOrg,
+    fetchJsasOrg: fetchJsasOrg,
     onAuthChange: onAuthChange
   };
 })();

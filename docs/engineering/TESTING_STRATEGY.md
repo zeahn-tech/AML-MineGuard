@@ -2,8 +2,8 @@
 
 | Field | Value |
 |---|---|
-| Doc status | PLAN. Current repo has **no test infrastructure** (no package.json, no test runner). Establishing a test harness is a Phase 01 prerequisite for the phases below. |
-| Last updated | 2026-09-03 |
+| Doc status | PARTIALLY LIVE (Phase 13). The live-probe + security-scan harness exists: `npm test` = `scripts/security-scan.mjs` + `scripts/run-all-probes.mjs` (all 10 self-cleaning probes, summary, CI-gateable exit codes). Unit / browser-E2E / load layers remain open. |
+| Last updated | 2026-09-10 |
 
 ## 1. Layers
 
@@ -67,7 +67,13 @@ flow; connectivity indicators. Manual smoke checklist retained in PRODUCTION_REA
 
 ## 7. Execution policy
 
-- CI on every change (harness created Phase 01): unit + integration + lint + typecheck + security scan.
+- **Live harness (Phase 13):** `npm test` runs the security scan (§5, exit 1 on CRITICAL) followed by
+  every live probe (04, 06, 06-cascade, 07, 08, 09, 10, 11, 12, 13) with a pass/fail summary and a
+  non-zero exit on any failure — CI-gateable as-is. Single-phase re-runs: `sh scripts/run-probes.sh <n>`.
+- CI on every change: the probe suite covers the integration + RLS/isolation + security layers above;
+  unit and browser-E2E layers are still open (no runner yet).
 - E2E on staging before deploy; tenant suite and emergency suite must pass before any Phase 06/09 gate.
 - Record results (pass/fail counts, commands, dates) into IMPLEMENTATION_STATUS.md; statuses only move to
   VERIFIED with recorded evidence.
+- Security scan classification rules (what is HIGH vs CRITICAL, and why) live in
+  `SECURITY_CERTIFICATION.md` §3/§5 — keep that document and the scanner in sync.

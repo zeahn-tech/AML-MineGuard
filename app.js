@@ -723,7 +723,7 @@ function renderGlossary(filter = '') {
   filtered.sort((a, b) => a.term.localeCompare(b.term));
 
   if (filtered.length === 0) {
-    list.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-muted);">${t('noTermsFound')} "${filter}"</div>`;
+    list.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-muted);">${t('noTermsFound')} "${escapeHtml(filter)}"</div>`;
     return;
   }
 
@@ -1040,8 +1040,8 @@ function renderEmergencyContacts() {
   container.innerHTML = all.map(c => `
     <div class="contact-card">
       <div class="contact-info">
-        <div class="contact-name">${c.name}</div>
-        <div class="contact-num">${c.number}</div>
+        <div class="contact-name">${escapeHtml(c.name)}</div>
+        <div class="contact-num">${escapeHtml(c.number)}</div>
       </div>
       <a class="contact-call" href="tel:${c.number.replace(/\D/g, '')}">📞 ${window.currentLang === 'fr' ? 'Appeler' : 'Call'}</a>
     </div>
@@ -1314,7 +1314,7 @@ function renderPhotoPreviews() {
   const countEl = document.getElementById('photoCount');
   preview.innerHTML = incidentPhotos.map((src, i) => `
     <div class="preview-thumb">
-      <img src="${src}" alt="Photo ${i+1}" />
+      <img src="${escapeHtml(src)}" alt="Photo ${i+1}" />
       <button type="button" class="remove-photo" onclick="removePhoto(${i})">✕</button>
     </div>
   `).join('');

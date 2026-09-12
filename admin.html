@@ -2068,10 +2068,10 @@ function renderOverview() {
   const ri = document.getElementById('recentIncidentsList');
   ri.innerHTML = incidents.slice(0, 5).length ? incidents.slice(0, 5).map(i => `
     <div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
-      <span class="sev-tag ${i.severity || 'low'}">${(i.severity||'low').toUpperCase()}</span>
+      <span class="sev-tag ${escHtml(i.severity || 'low')}">${escHtml((i.severity||'low').toUpperCase())}</span>
       <div style="flex:1;">
         <div style="font-size:13px;font-weight:600;">${typeLabel(i.type)}</div>
-        <div style="font-size:11px;color:var(--text2);">👷 ${i.name} · 📍 ${i.location}</div>
+        <div style="font-size:11px;color:var(--text2);">👷 ${escHtml(i.name)} · 📍 ${escHtml(i.location)}</div>
       </div>
     </div>
   `).join('') : '<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">No incidents yet</div></div>';
@@ -2079,8 +2079,8 @@ function renderOverview() {
   const rj = document.getElementById('recentJSAsList');
   rj.innerHTML = jsas.slice(0, 5).length ? jsas.slice(0, 5).map(j => `
     <div style="padding:10px 0;border-bottom:1px solid var(--border);">
-      <div style="font-size:13px;font-weight:600;">${j.task}</div>
-      <div style="font-size:11px;color:var(--text2);">👷 ${j.worker} · 📍 ${j.location} · 📅 ${j.date}</div>
+      <div style="font-size:13px;font-weight:600;">${escHtml(j.task)}</div>
+      <div style="font-size:11px;color:var(--text2);">👷 ${escHtml(j.worker)} · 📍 ${escHtml(j.location)} · 📅 ${escHtml(j.date)}</div>
     </div>
   `).join('') : '<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">No JSAs yet</div></div>';
 
@@ -2097,7 +2097,7 @@ function renderTypeChart() {
     <div class="chart-item">
       <div class="chart-label">${typeLabel(k)}</div>
       <div class="chart-bar-bg">
-        <div class="chart-bar" style="width:${v?(v/max*100):0}%;background:${colors[k]};">
+        <div class="chart-bar" style="width:${Math.round(v?((v/max)*100):0)}%;background:${colors[k]};">
           ${v > 0 ? `<span>${v}</span>` : ''}
         </div>
       </div>
@@ -2125,24 +2125,24 @@ function renderAllIncidents(filter) {
         <div class="inc-card-left">
           <div class="inc-card-type">${typeLabel(inc.type)}</div>
           <div class="inc-card-meta">
-            <span>👷 ${inc.name || 'Unknown'}</span>
-            <span>🪪 ${inc.badge || '-'}</span>
-            <span>📍 ${inc.location || '-'}</span>
+            <span>👷 ${escHtml(inc.name || 'Unknown')}</span>
+            <span>🪪 ${escHtml(inc.badge || '-')}</span>
+            <span>📍 ${escHtml(inc.location || '-')}</span>
             <span>🕒 ${inc.datetime ? new Date(inc.datetime).toLocaleString() : inc.savedAt}</span>
           </div>
         </div>
-        <span class="sev-tag ${inc.severity || 'low'}">${(inc.severity||'LOW').toUpperCase()}</span>
+        <span class="sev-tag ${escHtml(inc.severity || 'low')}">${escHtml((inc.severity||'LOW').toUpperCase())}</span>
       </div>
-      <div class="inc-desc">${inc.description || 'No description provided.'}</div>
+      <div class="inc-desc">${escHtml(inc.description || 'No description provided.')}</div>
       ${inc.action ? `<div style="margin-top:8px;font-size:12px;color:var(--green);">✅ Action taken: ${inc.action}</div>` : ''}
       ${inc.photos && inc.photos.length && inc.photos[0] !== '[photo-on-device]'
-        ? `<div class="inc-photos">${inc.photos.map(p => `<img class="inc-thumb" src="${p}" onclick="openPhotoModal('${p}')" />`).join('')}</div>`
+        ? `<div class="inc-photos">${inc.photos.map(p => `<img class="inc-thumb" src="${escHtml(p)}" onclick="openPhotoModal('${escHtml(p)}')" />`).join('')}</div>`
         : inc.photos && inc.photos.length
           ? `<div style="margin-top:8px;font-size:12px;color:var(--text2);">📷 ${inc.photos.length} photo(s) — view on submitting device</div>`
           : ''}
-      ${inc.witnesses ? `<div style="margin-top:8px;font-size:12px;color:var(--text2);">👥 Witnesses: ${inc.witnesses}</div>` : ''}
+      ${inc.witnesses ? `<div style="margin-top:8px;font-size:12px;color:var(--text2);">👥 Witnesses: ${escHtml(inc.witnesses)}</div>` : ''}
       <div class="inc-status-row">
-        <div class="status-dot ${inc.status || 'open'}"></div>
+        <div class="status-dot ${escHtml(inc.status || 'open')}"></div>
         <div class="status-text">${statusLabel(inc.status)}</div>
         ${inc.status !== 'resolved'
           ? `<button class="resolve-btn" onclick="resolveIncident('${inc._id || inc.savedAt}')">✅ Mark Resolved</button>`
@@ -2271,7 +2271,7 @@ function renderAllJSAs() {
       ${hazardHtml}
       ${ppeHtml}
       <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);text-align:right;">
-        <button class="danger-btn" onclick="confirmDeleteJSA('${j._id || j.savedAt}')">🗑️ Delete</button>
+        <button class="danger-btn" onclick="confirmDeleteJSA('${escHtml(j._id || j.savedAt)}')">🗑️ Delete</button>
       </div>
     </div>`;
   }).join('');
@@ -2311,8 +2311,8 @@ function renderAnalytics() {
   const sevColors = { critical:'#ff4444', high:'#e63946', medium:'#ff8c00', low:'#2ec4b6' };
   document.getElementById('sevChartRows').innerHTML = Object.entries(sevs).map(([k, v]) => `
     <div class="chart-item">
-      <div class="chart-label" style="text-transform:capitalize;">${k}</div>
-      <div class="chart-bar-bg"><div class="chart-bar" style="width:${v?(v/maxS*100):0}%;background:${sevColors[k]};">${v>0?`<span>${v}</span>`:''}</div></div>
+      <div class="chart-label" style="text-transform:capitalize;">${escHtml(k)}</div>
+      <div class="chart-bar-bg"><div class="chart-bar" style="width:${Math.round(v?((v/maxS)*100):0)}%;background:${sevColors[k]};">${v>0?`<span>${v}</span>`:''}</div></div>
     </div>`).join('');
 
   const locs = {};
@@ -2336,8 +2336,8 @@ function renderAnalytics() {
   const maxD = Math.max(...dayCounts, 1);
   document.getElementById('timeChartRows').innerHTML = days.map((d, i) => `
     <div class="chart-item">
-      <div class="chart-label">${d}</div>
-      <div class="chart-bar-bg"><div class="chart-bar" style="width:${(dayCounts[i]/maxD*100)}%;background:#7b2d8b;">${dayCounts[i]>0?`<span>${dayCounts[i]}</span>`:''}</div></div>
+      <div class="chart-label">${escHtml(d)}</div>
+      <div class="chart-bar-bg"><div class="chart-bar" style="width:${Math.round(dayCounts[i]/maxD*100)}%;background:#7b2d8b;">${dayCounts[i]>0?`<span>${dayCounts[i]}</span>`:''}</div></div>
     </div>`).join('');
 
   const reporterMap = {};
@@ -2428,18 +2428,18 @@ function renderDeletedList() {
           <div class="inc-card-left">
             <div class="inc-card-type">${typeLabel(inc.type)}</div>
             <div class="inc-card-meta">
-              <span>👷 ${inc.name || 'Unknown'}</span>
-              <span>📍 ${inc.location || '-'}</span>
+              <span>👷 ${escHtml(inc.name || 'Unknown')}</span>
+              <span>📍 ${escHtml(inc.location || '-')}</span>
               <span>🕒 ${inc.datetime ? new Date(inc.datetime).toLocaleString() : inc.savedAt}</span>
             </div>
             <div class="deleted-card-meta">
-              <span>🗑️ Deleted ${inc.deletedAt || '-'}</span>
-              <span>👤 By ${inc.deletedBy || 'admin'}</span>
+              <span>🗑️ Deleted ${escHtml(inc.deletedAt || '-')}</span>
+              <span>👤 By ${escHtml(inc.deletedBy || 'admin')}</span>
             </div>
           </div>
-          <span class="sev-tag ${inc.severity || 'low'}">${(inc.severity||'LOW').toUpperCase()}</span>
+          <span class="sev-tag ${escHtml(inc.severity || 'low')}">${escHtml((inc.severity||'LOW').toUpperCase())}</span>
         </div>
-        <div class="inc-desc">${inc.description || 'No description provided.'}</div>
+        <div class="inc-desc">${escHtml(inc.description || 'No description provided.')}</div>
         <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;">
           <button class="restore-btn" onclick="restoreIncidentNow('${inc._id || inc.savedAt}')">♻️ Restore</button>
           <button class="purge-btn" onclick="confirmPurgeIncident('${inc._id || inc.savedAt}')">⛔ Delete Forever</button>
@@ -2455,18 +2455,18 @@ function renderDeletedList() {
       <div class="jsa-card" style="opacity:0.85;">
         <div class="jsa-card-top">
           <div>
-            <div class="jsa-card-task">${j.task}</div>
-            <div class="jsa-card-meta">👷 ${j.worker} · 📍 ${j.location} · 📅 ${j.date}</div>
+            <div class="jsa-card-task">${escHtml(j.task)}</div>
+            <div class="jsa-card-meta">👷 ${escHtml(j.worker)} · 📍 ${escHtml(j.location)} · 📅 ${escHtml(j.date)}</div>
             <div class="deleted-card-meta">
-              <span>🗑️ Deleted ${j.deletedAt || '-'}</span>
-              <span>👤 By ${j.deletedBy || 'admin'}</span>
+              <span>🗑️ Deleted ${escHtml(j.deletedAt || '-')}</span>
+              <span>👤 By ${escHtml(j.deletedBy || 'admin')}</span>
             </div>
           </div>
           <span class="jsa-hazard-count">⚠️ ${j.hazards ? j.hazards.length : 0} hazard(s)</span>
         </div>
         <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;">
-          <button class="restore-btn" onclick="restoreJSANow('${j._id || j.savedAt}')">♻️ Restore</button>
-          <button class="purge-btn" onclick="confirmPurgeJSA('${j._id || j.savedAt}')">⛔ Delete Forever</button>
+          <button class="restore-btn" onclick="restoreJSANow('${escHtml(j._id || j.savedAt)}')">♻️ Restore</button>
+          <button class="purge-btn" onclick="confirmPurgeJSA('${escHtml(j._id || j.savedAt)}')">⛔ Delete Forever</button>
         </div>
       </div>
     `).join('');
@@ -3132,10 +3132,32 @@ async function publishNotice() {
     local.unshift(notice);
     localStorage.setItem('mineguard_notices', JSON.stringify(local));
 
-    // Save to Firestore
-    let cloudId = null;
-    if (window.MG && window.MG.online && typeof saveNoticeFirestore === 'function') {
-      cloudId = await saveNoticeFirestore(notice);
+    // Phase 05 cutover (ADR-014): signed-in admins publish to Supabase
+    // safety_notices (RLS + audit) — the Firestore path is retired.
+    let published = false;
+    const auth = window.MG_AUTH;
+    if (auth && auth.createSafetyNotice && auth.getSession && auth.getSession()) {
+      try {
+        const memberships = await auth.fetchMyMemberships();
+        const orgId = memberships && memberships.length ? memberships[0].organization_id : null;
+        if (orgId) {
+          await auth.createSafetyNotice(orgId, {
+            client_id: notice.client_id || (window.MG_STORE ? window.MG_STORE.newClientId('notice') : null),
+            title: notice.title,
+            message: notice.message,
+            notice_type: notice.type,
+            work_zone: notice.workZone || null,
+            created_by_text: notice.createdBy || null
+          });
+          published = true;
+        }
+      } catch (e) {
+        console.error('[AdminNotices] Supabase publish failed:', e.message);
+        if (statusEl) { statusEl.style.display='block'; statusEl.textContent='✗ Publish failed: '+e.message; statusEl.style.color='var(--red)'; }
+      }
+    }
+    if (!published && window.MG && window.MG.online && typeof saveNoticeFirestore === 'function') {
+      const cloudId = await saveNoticeFirestore(notice);
       if (cloudId) {
         notice._id = cloudId;
         const local2 = JSON.parse(localStorage.getItem('mineguard_notices') || '[]');
@@ -3144,11 +3166,11 @@ async function publishNotice() {
       }
     }
 
-    if (statusEl) {
+    if (statusEl && statusEl.style.display !== 'block') {
       statusEl.style.display = 'block';
-      statusEl.textContent = cloudId
-        ? '✅ Notice published and synced to all devices!'
-        : '✅ Notice saved locally (will sync when online)';
+      statusEl.textContent = published
+        ? '✅ Notice published to your organization (Supabase)!'
+        : '✅ Notice saved locally (sign in to publish org-wide)';
     }
 
     await renderAdminNoticesPanel();

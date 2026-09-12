@@ -2,9 +2,104 @@
 
 | Field | Value |
 |---|---|
-| Session | 15 — Phase 12 COMPLETE: SaaS + enterprise administration shipped end-to-end (migrations `…094` + probe-driven fix `…095` applied; `scripts/verify-phase12.mjs` 31/31 PASS self-cleaning; client: `supabase-auth.js` Phase 12 wrappers + `org-admin.js` sites/settings/plan + `gov-admin.js` grant expiry + national overview; regression suites 06/06-cascade/07/08/09/10/11 all PASS — Phase 11 back to 48/48 after the PGRST203 overload fix). Phase 11 remains COMPLETE |
-| Date | 2026-09-09 |
+| Session | 17 — Phase 05 cutover COMPLETE (fresh-start, ADR-014): owner waived the Firestore import; migrations `…097` (safety_notices + acks) + `…098` (soft-delete RPC) applied live; `notices.js` cut over to PostgREST for signed-in users (Firestore = fallback-only); `verify-phase05.mjs` 42/42 PASS self-cleaning; full probe suite (04/05/06/06c/07/08/09/10/11/12/13) all-PASS after audit-trigger-count expectations updated 21→23; **rotations from the session-16 incident still REQUIRED** |
+| Date | 2026-09-10 |
 | Agent | Buffy (Freebuff/Vly) |
+
+## Session 17 — what was completed (Phase 05 cutover — fresh-start, ADR-014)
+
+Context: owner directive "Let go every data migration from Firestore, we are going to start afresh with
+new data in Supabase" → ADR-014. The prior session had authored migration `…097` + client cutover but
+was interrupted before apply/verify. This session completed the cutover:
+
+- **ADR-014 recorded** in DECISIONS.md (fresh-start; Firestore = fallback-only channel for signed-out
+  users; import prep stays on disk if the decision is ever reversed).
+- **Migrations `…097` + `…098` applied live** (…097 was already applied by the interrupted session;
+  …098 added the `notice_soft_delete` SECURITY DEFINER RPC — PostgREST re-checks the SELECT policy on
+  PATCH…RETURNING, same 42501 class as the Phase 07 `Prefer` finding).
+- **`scripts/verify-phase05.mjs` (new)**: 42/42 PASS, self-cleaning — catalog, two-org RLS matrix,
+  worker write denials, site-targeting visibility, ack idempotency + cross-user isolation, broadcast vs
+  site scope, admin soft-delete via RPC + audit, regulator read scope, `client_id` idempotency.
+- **Probe catalog-drift updates**: `verify-phase07/08/09.mjs` audit-trigger count 21 → 23 (two new
+  notices triggers). Suite-hygiene: a timed-out suite run leaves scratch orgs that collide on
+  `organizations_name_lower_uidx` on re-run; clean leftovers first (transient helpers
+  `scripts/inspect-leftovers.mjs`, `scripts/clean-p8-residue.mjs`).
+- **Full regression all-PASS** (run in subsets to stay under the terminal timeout): 04, 05, 06, 06c,
+  07, 08, 09, 10, 11, 12, 13; security scan 0 CRITICAL.
+
+## Session 17 — verification evidence (recorded)
+
+- Migration history: `…096`, `…097`, `…098` all recorded in `supabase_migrations.schema_migrations`.
+- `verify-phase05.mjs` 42/42 PASS + residue {notices:0, orgs:0}; Phase 07/08/09 re-run ALL-PASS after
+  the trigger-count fix; Phase 08 was also blocked by a leftover-org name collision from an earlier
+  timed-out run (cleaned, then ALL-PASS).
+- Scratch-data check: 0 leftover probe orgs / notices / users across all prefixes.
+
+## Session 17 — standing user actions + next session
+
+- **USER ACTION (still open from session 16):** rotate the service-role key + DB password
+  (SECURITY_CERTIFICATION §2 — committed copies remain valid until rotated).
+- Phase 13 remainder (open control rows): XSS adversarial suite, rate limiting, MFA enablement,
+  media re-encode, backups/restore drill (SECURITY_CERTIFICATION §1/§4).
+- Wire `npm test` into CI to reach VERIFIED-tier evidence.
+- Phase 05 remainder per ADR-014 consequence (3): full Firestore retirement (removing the signed-out
+  mirror) is a later deletion step requiring explicit owner approval.
+
+## Session 16 — what was completed (Phase 13 — hardening + security certification, COMPLETE)
+
+- **Secret-leak incident (TESTING_STRATEGY §5 found it for real):** `scripts/run-probes.sh` carried the
+  live service-role JWT + DB password, committed. Remediated in-file (env-injected now); **the user MUST
+  rotate the service-role key and DB password in the Supabase dashboard — the old values remain valid
+  and live in git history.** Full incident record + checklist: `SECURITY_CERTIFICATION.md` §2.
+- **`scripts/security-scan.mjs` (new)** — automated secret-leak scan over tracked files; CRITICAL rules
+  (service-role JWT, `sbp_` tokens, private keys, postgres URLs w/ passwords, `mineguard2024`, misplaced
+  API keys) exit 1; baseline **0 CRITICAL / 16 HIGH** all classified-accepted (Firebase web key =
+  public-by-design; probe passwords = throwaway users) — rationale inline + in SECURITY_CERTIFICATION §3/§5.
+- **Durable suite:** `npm test` = scan + `scripts/run-all-probes.mjs` (all 10 probes, summary, CI-gateable
+  exit). `package.json` scripts: `test`, `test:scan`, `test:probes`, `test:one`, `security:scan`.
+- **Migration `…096_phase13_hardening.sql` (authored, NOT applied):** `site_create` enforces active-plan
+  `max_sites` (null/no-subscription = unlimited back-compat; same 4-arg signature — no PGRST203 overload);
+  `regulator_expire_due_grants()` audited idempotent sweep (national_regulatory_admin or scheduler;
+  lapses captured by the existing grants audit trigger). Schema conventions verified pre-authoring.
+- **`SECURITY_CERTIFICATION.md` (new)** — per-control DEMONSTRATED/ACCEPTED/OPEN table with artifacts,
+  incident + rotation checklist, residual risks (legacy Firestore dual-read channel = highest-priority
+  residual), gates to "production candidate". **`PRODUCTION_READINESS.md`** re-ticked with evidence.
+- Note: an interrupted earlier attempt had pre-authored `run-all-probes.mjs` / `verify-phase13.mjs` /
+  the `run-probes.sh` fix; reviewed + validated this session, scanner extended, `npm test` wired.
+
+- **XSS render-path audit (SECURITY_CERTIFICATION §1 row 14 closed at the static layer):**
+  new `scripts/xss-audit.mjs` — audits every dynamic interpolation reaching an HTML sink
+  (63 sink statements across 8 client files); ~30 genuine escapes added in `admin.html` /
+  `app.js` / `notices.js` (JSA task/worker/location/date, incident name/badge/location/status/
+  severity/witnesses/description/deletedBy/deletedAt, contact name+number from localStorage,
+  glossary filter text, photo src + onclick, notice filter fragment). Remaining interpolations
+  allowlisted as reviewed-safe (static `data.js` fields, numeric chart bars, fixed-literal
+  ternaries, enum label/color lookups) with the rationale recorded in the scanner. Wired into
+  `npm test` (exit 1 on any unescaped interpolation). Dynamic adversarial-payload E2E remains open.
+- **`npm test` composition**: security scan + XSS audit + all 10 live probes.
+
+## Session 16 — verification evidence (recorded)
+
+- Migration `…096` applied live (HTTP 201, fresh access token) via `scripts/apply-migration.mjs`.
+- `scripts/verify-phase13.mjs`: **27/27 PASS, self-cleaning** — catalog (hardened site_create with
+  unchanged signature; sweep RPC granted to authenticated), max_sites (cap denial names the plan, no
+  partial row, upgrade re-allows, no-subscription back-compat), sweep (past-due lapsed, future/null
+  untouched, idempotent, worker denied, lapses audited, expired-grant reads 0), scan self-check,
+  Phase 12 RPC surface intact. Cleanup: 3 orgs / 4 users / 3 grants / 8 sites removed.
+- Full regression all-PASS: 04, 06, 06-cascade, 07, 08 (after cleaning leftover probe orgs from a
+  timed-out earlier run), 09, 10, 11 (48/48), 12 (31/31); security-scan exit 0 (0 CRITICAL / 16
+  classified HIGH).
+
+## Session 16 — standing user actions + next session
+
+- **USER ACTION (dashboard-only, still open):** rotate the service-role key + DB password — the
+  committed copies remain valid until rotated (SECURITY_CERTIFICATION §2). Consider rotating `sbp_`
+  access tokens pasted in chat.
+- Phase 13 remainder (open control rows): XSS adversarial suite, rate limiting, MFA enablement,
+  media re-encode, backups/restore drill (SECURITY_CERTIFICATION §1/§4).
+- Wire `npm test` into CI to move verification artifacts to VERIFIED-tier evidence.
+- Per fixed phase order, next: Phase 05 cutover remainder (legacy Firestore channel) and/or the
+  hardening remainder above — owner's call; both are recorded in IMPLEMENTATION_STATUS.
 
 ## Session 15 — what was completed (Phase 12 — SaaS + enterprise administration, COMPLETE)
 

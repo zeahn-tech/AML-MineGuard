@@ -293,3 +293,33 @@ Phase 07–09 DDL. (3) Photo storage keys follow
 review answers land. (4) Audit_log rows import with `legacy_import: true` (actor strings are not
 tamper-proof evidence). (5) Deterministic re-runs are verified by byte-identical payload hashes.
 
+## ADR-014 — Phase 05 cutover: fresh-start directive — the Firestore data migration is WAIVED; Supabase becomes the only production data path for signed-in users (2026-09-10)
+
+**Decision (owner directive, quoted: "Let go every data migration from Firestore, we are going to start
+afresh with new data in Supabase").** No legacy Firestore documents are imported. Tenant #1 and every
+future tenant start with empty safety-domain tables. The legacy anonymous Firestore channel remains
+ONLY as the signed-out/local-only fallback path (workers are identity-optional by design, Phase 02);
+for any signed-in user, the Supabase offline-sync engine (Phase 10) is the authoritative read AND
+write path for incidents, JSAs, emergency events, and (new) safety notices. ADR-003's Firestore
+export/backup requirement is satisfied by ADR-012's gitignored snapshot (local, not durable) plus the
+explicit owner waiver of the import — the platform owns the consequence: legacy history does not
+appear in the new system.
+
+**Reason.** The legacy corpus is small (~100 docs), contains review-gated hygiene problems (site
+vocabulary mismatches, badge conflicts, free-text actors) that would each need owner decisions, and
+blocks the production cutover indefinitely. Starting fresh lets every tenant begin inside the
+tenant-isolation model with server-pinned identity from day one — the property the legacy data can
+never have (all of it is anonymous-channel data). The import prep (ADR-012) remains available on disk
+if the owner later reverses this decision.
+
+**Consequences.** (1) The last legacy-only domain without a Supabase home — safety notices — moved into
+the tenant model in migration `20260903000097_phase05_cutover_notices.sql` (`safety_notices` +
+`safety_notice_acks`: org+site scoped, `notices.manage`/org-admin writes, broadcast semantics via
+site_id null, per-user idempotent acks, dedicated additive audit triggers → 23 audit triggers).
+(2) Signed-in reads/writes cut over in `firebase.js` (incidents/JSAs/SOS via the sync engine) and
+`notices.js` (direct PostgREST with legacy-shape reverse-mappers so no UI code changes). (3) The
+Firestore channel is now fallback-only; full retirement (removing the signed-out mirror) is a later
+deletion step requiring explicit owner approval. (4) `review-lists.json` and the import payloads stay
+gitignored and unimported. (5) Fresh-start means tenant #1's admin dashboards show zero historical
+rows until new production data is created.
+

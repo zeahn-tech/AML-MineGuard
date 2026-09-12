@@ -5,7 +5,13 @@
   "description": "MineGuard — mining safety PWA (static HTML/CSS/JS). Dev server serves the static app.",
   "scripts": {
     "dev": "node server.mjs",
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "test": "node scripts/security-scan.mjs && node scripts/xss-audit.mjs && node scripts/run-all-probes.mjs",
+    "test:scan": "node scripts/security-scan.mjs",
+    "test:xss": "node scripts/xss-audit.mjs",
+    "test:probes": "node scripts/run-all-probes.mjs",
+    "test:one": "sh scripts/run-probes.sh",
+    "security:scan": "node scripts/security-scan.mjs"
   },
   "devDependencies": {
     "supabase": "^2.116.0"

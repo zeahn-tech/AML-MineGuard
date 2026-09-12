@@ -4,8 +4,17 @@ Backend decision: **Supabase** (PostgreSQL + PostgREST + Auth + Storage), decide
 see `docs/engineering/DECISIONS.md` ADR-008. PostgREST's plain-HTTPS JSON API is reachable with
 `fetch()` from the vanilla no-build PWA — consistent with the app's restricted-network requirement.
 
-## Live status (2026-09-09)
+## Live status (2026-09-10)
 
+Phase 05 cutover (fresh-start, ADR-014) is COMPLETE: migrations `…097_phase05_cutover_notices.sql`
+(`safety_notices` + `safety_notice_acks` + 2 audit triggers → 23 total) and `…098` (probe-driven
+`notice_soft_delete` SECURITY DEFINER RPC) applied 2026-09-10; `verify-phase05.mjs` 42/42 PASS
+self-cleaning. The Firestore data import was WAIVED by the owner — tenants start with empty
+safety-domain tables; the legacy Firestore channel is fallback-only (signed-out users).
+Phase 13 (production hardening + security certification) is COMPLETE: migration
+`…096_phase13_hardening.sql` (`site_create` max_sites enforcement + `regulator_expire_due_grants()`
+audited expiry sweep) applied 2026-09-10; `verify-phase13.mjs` 27/27 PASS self-cleaning; full suite:
+`npm test` (security scan + all live probes).
 Phase 12 (SaaS + enterprise administration) is COMPLETE — see
 `docs/engineering/IMPLEMENTATION_STATUS.md` §Phase 12. Migrations `…094` (plans/subscriptions,
 site/settings/subscription/platform/grant-expiry RPCs, `gov_national_overview()`, subscriptions audit
@@ -15,6 +24,10 @@ applied; `verify-phase12.mjs` 31/31 PASS self-cleaning. Phase 11 (Government reg
 center) is COMPLETE — migrations `…090`–`…093` applied; `verify-phase11.mjs` 48/48 PASS. Phase 10
 (offline-first sync), Phase 09 (emergency + SOS), Phase 08 (JSA + inspection + CAPA), Phase 07
 (incidents + evidence), and Phase 06 (RLS + security) all COMPLETE.
+
+**Security note (Phase 13):** `scripts/run-probes.sh` previously hard-coded the service-role key + DB
+password (now removed; env-injected). Those credentials MUST be rotated in the Supabase dashboard —
+see `docs/engineering/SECURITY_CERTIFICATION.md` §2.
 Phase 05 (data migration) prep remains PARTIALLY COMPLETE: nothing has been imported; prep artifacts live in two GITIGNORED dirs (they
 contain worker names/badges/incident data — never push them):
 
