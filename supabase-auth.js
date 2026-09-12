@@ -168,6 +168,9 @@
       : Promise.resolve(null);
     return p.then(function () {
       writeSession(null);
+      // Clear the selected-organization UI preference (never a security
+      // boundary, but must not leak across accounts on a shared device).
+      try { localStorage.removeItem("mg_selected_org"); } catch (e) {}
       notify(null);
       return true;
     });
@@ -586,6 +589,59 @@
     return pgGet("/jsas?select=id,site_id,client_id,task,worker_text,supervisor_text,location_text,date,status,ppe,saved_at,created_at,deleted&organization_id=eq." + encodeURIComponent(orgId) + "&order=created_at.desc&limit=200");
   }
 
+  // Organization lifecycle (session 18): self-service creation + ownership
+  // transfer. Both are SECURITY DEFINER server-side; ownership/role/status are
+  // ALWAYS derived from auth.uid() — the client only passes name/type/county.
+  function createOrganization(name, orgType, county) {
+    var args = { p_name: name };
+    if (orgType) args.p_org_type = orgType;
+    if (county) args.p_county = county;
+    return rpc("create_organization", args).then(function (data) {
+      // PostgREST returns a jsonb object {organization_id, slug}
+      return data && data.organization_id ? data : { organization_id: data };
+    });
+  }
+
+  function orgTransferOwnership(orgId, newOwnerUserId) {
+    return rpc("org_transfer_ownership", {
+      p_organization_id: orgId,
+      p_new_owner_user_id: newOwnerUserId
+    });
+  }
+
+  // Selected-organization UI preference (NOT a security boundary — every data
+  // read/write is revalidated server-side by RLS; the id is only a hint).
+  var ORG_PREF_KEY = "mg_selected_org";
+  function getSelectedOrgId() {
+    try { return localStorage.getItem(ORG_PREF_KEY) || null; } catch (e) { return null; }
+  }
+  function setSelectedOrgId(orgId) {
+    try {
+      if (orgId) localStorage.setItem(ORG_PREF_KEY, orgId);
+      else localStorage.removeItem(ORG_PREF_KEY);
+    } catch (e) { /* storage unavailable */ }
+    try { window.dispatchEvent(new CustomEvent("mg-org-change", { detail: { organization_id: orgId || null } })); }
+    catch (e) { /* older browsers */ }
+  }
+
+  // Resolve the effective organization: validates the stored preference against
+  // CURRENT active memberships (server truth); falls back to the first active
+  // owner/admin membership, then the first active membership. Returns null when
+  // the user has no active membership (never grants access to anything).
+  function resolveActiveOrg() {
+    return fetchMyMemberships().then(function (mems) {
+      var active = (mems || []).filter(function (m) { return m.status === "active"; });
+      if (!active.length) { setSelectedOrgId(null); return null; }
+      var pref = getSelectedOrgId();
+      var chosen = pref && active.find(function (m) { return m.organization_id === pref; });
+      if (!chosen) {
+        chosen = active.find(function (m) { return m.role === "owner" || m.role === "admin"; }) || active[0];
+        setSelectedOrgId(chosen.organization_id);
+      }
+      return chosen;
+    }).catch(function () { return null; });
+  }
+
   window.MG_AUTH = {
     signUp: signUp,
     signInWithPassword: signInWithPassword,
@@ -599,6 +655,11 @@
     hasOrgPermission: hasOrgPermission,
     fetchMyPermissions: fetchMyPermissions,
     bootstrapFirstOwner: bootstrapFirstOwner,
+    createOrganization: createOrganization,
+    orgTransferOwnership: orgTransferOwnership,
+    getSelectedOrgId: getSelectedOrgId,
+    setSelectedOrgId: setSelectedOrgId,
+    resolveActiveOrg: resolveActiveOrg,
     fetchSiteEffectiveRole: fetchSiteEffectiveRole,
     hasSitePermission: hasSitePermission,
     fetchOrgSites: fetchOrgSites,

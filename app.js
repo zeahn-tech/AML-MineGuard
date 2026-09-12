@@ -4,24 +4,53 @@
 // ============================================
 
 // ---- SPLASH SCREEN ----
-function dismissSplash() {
+// Authentication gate: the worker workspace is AUTHENTICATED surface. The
+// splash hides the shell while the session + membership resolve; the gate
+// (auth-gate.js) decides between the welcome/auth screen and the workspace.
+// Safety-reference content (glossary/PPE/first aid/emergency procedures) is
+// public-by-design and also reachable from the gate note; tenant data is not.
+function dismissSplash(entry) {
   try {
     const splash = document.getElementById('splash');
-    const app = document.getElementById('app');
     if (splash) { splash.classList.add('fade-out'); setTimeout(() => { splash.style.display = 'none'; }, 500); }
-    if (app) app.classList.remove('hidden');
-    initApp();
+    if (entry === 'workspace') {
+      const app = document.getElementById('app');
+      if (app) app.classList.remove('hidden');
+      initApp();
+    }
   } catch(e) {
     console.error('Init error:', e);
     const splash = document.getElementById('splash');
-    const app = document.getElementById('app');
     if (splash) splash.style.display = 'none';
-    if (app) app.classList.remove('hidden');
   }
 }
 
-window.addEventListener('load', () => { setTimeout(dismissSplash, 1500); });
-setTimeout(dismissSplash, 4000);
+function resolveEntry() {
+  function finish(destination) {
+    if (destination === 'AUTH_REQUIRED') {
+      dismissSplash('gate');
+      if (window.MG_GATE) MG_GATE.showGate();
+    } else if (destination === 'NO_ORGANIZATION') {
+      // Authenticated with no membership: show the workspace shell (public
+      // reference tabs work) but surface onboarding guidance via the gate.
+      dismissSplash('workspace');
+      if (window.MG_GATE) { MG_GATE.showGate(); MG_GATE.showGateMsg(t ? t('gateNoOrg') : 'No organization has been assigned to your account yet. Ask your administrator for an invitation, or create your own organization.', 'info'); }
+    } else if (destination === 'COMPANY_ADMIN' || destination === 'GOVERNMENT_WORKSPACE') {
+      dismissSplash('workspace');
+      window.location.replace('admin.html');
+    } else if (destination === 'SELECT_ORGANIZATION') {
+      dismissSplash('workspace');
+      if (window.MG_GATE) { MG_GATE.showGate(); MG_GATE.showGateMsg(t ? t('gateSelectOrg') : 'You belong to more than one organization. Open the account menu to choose which one to work in.', 'info'); }
+    } else {
+      dismissSplash('workspace');
+    }
+  }
+  if (!(window.MG_GATE && window.MG_AUTH && window.MG_CONFIG)) { finish('AUTH_REQUIRED'); return; }
+  MG_GATE.resolveDestination(MG_AUTH).then(finish).catch(function () { finish('AUTH_REQUIRED'); });
+}
+
+window.addEventListener('load', () => { setTimeout(resolveEntry, 900); });
+setTimeout(resolveEntry, 3500);
 
 // ---- APP INIT ----
 let connectivityRefreshBound = false;

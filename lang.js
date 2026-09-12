@@ -60,6 +60,12 @@ window.TRANSLATIONS = {
     authConfirmEmail: "Account created. Check your email to confirm, then sign in.",
     authValidation: "Enter a valid email and a password of at least 6 characters.",
     authFailed: "Sign-in failed. Try again.",
+    gateAcceptInvite: "Accept Invitation",
+    gateForgot: "Forgot Password?",
+    gateForgotSent: "Password reset is not available yet. Contact your organization administrator.",
+    gateInviteHint: "Sign in with the invited email, then use the invitation link your administrator sent you.",
+    gateNoOrg: "No organization has been assigned to your account yet. Ask your administrator for an invitation, or create your own organization.",
+    gateSelectOrg: "You belong to more than one organization. Open the account menu to choose which one to work in.",
 
     // Glossary
     glossaryTitle: "Mining Glossary",
@@ -233,6 +239,12 @@ window.TRANSLATIONS = {
     authRoleMember: "Membre",
     authConfirmEmail: "Compte créé. Vérifiez vos e-mails pour confirmer, puis connectez-vous.",
     authValidation: "Saisissez un e-mail valide et un mot de passe d'au moins 6 caractères.",
+    gateAcceptInvite: "Accepter une invitation",
+    gateForgot: "Mot de passe oublié ?",
+    gateForgotSent: "La réinitialisation du mot de passe n’est pas encore disponible. Contactez l’administrateur de votre organisation.",
+    gateInviteHint: "Connectez-vous avec l’e-mail invité, puis utilisez le lien d’invitation envoyé par votre administrateur.",
+    gateNoOrg: "Aucune organisation n’est encore associée à votre compte. Demandez une invitation à votre administrateur ou créez votre propre organisation.",
+    gateSelectOrg: "Vous appartenez à plusieurs organisations. Ouvrez le menu de compte pour choisir dans laquelle travailler.",
     authFailed: "Échec de la connexion. Réessayez.",
 
     // Glossary

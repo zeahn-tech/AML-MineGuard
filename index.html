@@ -906,6 +906,7 @@ body.mg-sos-locked { overflow: hidden; }
         <span class="header-title">MINE<span>GUARD</span></span>
       </div>
       <div class="header-right">
+        <!-- Authentication account chip (auth-ui.js) — gate is authoritative -->
         <!-- Language Toggle -->
         <div class="lang-toggle">
           <button class="lang-btn active" data-lang="en" onclick="switchLanguage('en')">EN</button>
@@ -1406,6 +1407,7 @@ body.mg-sos-locked { overflow: hidden; }
   <script src="app.js"></script>
   <script src="config.js"></script>
   <script src="supabase-auth.js"></script>
+  <script src="auth-gate.js"></script>
   <script src="auth-ui.js"></script>
 
   <!-- Set correct active lang button on load -->

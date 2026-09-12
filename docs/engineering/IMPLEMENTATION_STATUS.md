@@ -713,6 +713,98 @@ backups/restore drill (SECURITY_CERTIFICATION §1 OPEN rows + §4 gates). Per fi
 remaining hardening items above and the Phase 05 cutover remainder (legacy Firestore channel).
 
 ---
+## Session 18 (2026-09-10) — Organization lifecycle + authentication remediation — COMPLETE
+
+**Trigger:** new sign-ups hitting "no claimable organization found: an owner already exists for
+every active organization" when trying to set up an organization.
+
+**Forensic findings (audited before any change):**
+1. The error is raised by `bootstrap_first_owner()` (migration `…020`): it only CLAIMS the oldest
+   active mining_company org with zero active members — first-deployment bootstrap, not creation.
+   Once any org has an owner (e.g. seeded AML), every new user gets the exception.
+2. Organization INSERT was default-deny for authenticated users (no INSERT policy) — NO self-service
+   organization creation existed anywhere.
+3. `org_type` constraint: mining_company/contractor/regulator/platform only (no service_provider).
+4. RPCs managing orgs were claim/admin/platform only — none creates an organization.
+5. Subscriptions seeded via SQL only — no init on creation.
+6. No ownership-transfer path (owner re-role blocked — good, but a dead end for succession).
+7. Multi-membership supported by schema but UI used `memberships[0]` / first-admin heuristics.
+8. Logout detached listeners + remote sign-out; no selected-org preference existed to clear.
+
+**Implemented (migration `20260903000099_org_lifecycle.sql`, applied live HTTP 201):**
+- `create_organization(p_name, p_org_type, p_county)` — SECURITY DEFINER, fixed search_path, session
+  required, name validation (1–120), type whitelist (mining_company/contractor/service_provider;
+  regulator/platform REJECTED), server-generated collision-safe slug (`abc-mining-liberia`, then
+  `-2`, `-3`…; UUID remains the identifier; duplicate exact names rejected by the existing unique
+  index), server UUID/timestamps, `created_by = auth.uid()`, creator becomes owner+active ATOMICALLY,
+  starter subscription initialized in the same transaction (no billing). Audit via existing triggers.
+  No new RLS policies — organizations INSERT stays default-deny; creation ONLY via this RPC.
+- `org_transfer_ownership(p_organization_id, p_new_owner_user_id)` — current active owner only,
+  target must be an active same-org member, atomic swap (target→owner, previous owner→admin; never
+  ownerless), self-transfer rejected, admins cannot seize. Audit captured.
+- `org_type` constraint extended with `service_provider`.
+- Both RPCs: revoke public/anon, grant authenticated.
+
+**Implemented (client):**
+- `supabase-auth.js`: `createOrganization`, `orgTransferOwnership`, selected-org model
+  (`getSelectedOrgId`/`setSelectedOrgId`/`resolveActiveOrg` — preference validated against CURRENT
+  active memberships; UI state only), signOut clears the org preference.
+- `admin.html` login: "Set Up Organization (Owner)" replaced with **Create New Organization** (form,
+  friendly errors), **Claim Existing Organization** (labeled first-deployment bootstrap), **Join**
+  (invitation explanation). `attemptAdminEntry` uses `resolveActiveOrg` (one org → enter; several →
+  switcher; none → onboarding options).
+- `org-admin.js`: org switcher for multi-membership users (server-confirmed memberships only),
+  first-site onboarding card → existing `site_create`, `pickOrg` via `resolveActiveOrg`.
+
+**Verification (all commands actually run):**
+- `scripts/verify-org-lifecycle.mjs` (new): **30/30 PASS, self-cleaning** — catalog, happy path,
+  denials (anon 401, regulator/platform/empty 400, forged INSERTs 403), duplicate name, slug
+  collision `-2`, transfer rules + single-owner invariant, audit rows, isolation (outsider 0 rows,
+  site INSERT 403), first-site authz. Wired into `run-all-probes.mjs` as `olc`.
+- Full regression all-PASS: 04, olc, 06, 06c, 07, 08, 09, 10, 11, 12, 13.
+- Security scan 0 CRITICAL; XSS audit clean; `node --check` clean on all touched JS.
+
+**Not done (scope stop):** email-verification UX stays GoTrue default; no billing; regulator
+provisioning stays manual/platform-side; no new rate limiting (Phase 13 open row).
+
+---
+
+---
+
+## Session 19 — Authentication gate + entry routing (2026-09-12) — COMPLETE (live-verified)
+
+**Problem (forensic finding):** `index.html` dismissed its splash on a fixed
+timer and called `initApp()` unconditionally — the authenticated Worker
+Screen ran with zero session check; identity was free-text localStorage. The
+header \u201cSign In\u201d chip returned users to the same unguarded screen.
+
+**Root cause:** no entry-time session check anywhere; `auth-ui.js` sign-in had
+no routing; only `admin.html` had a gate.
+
+**Changes:**
+- `auth-gate.js` (NEW): `MG_GATE.resolveEntry` (only splash-dismiss path),
+  `resolveFromMemberships` centralized destination resolver
+  (AUTH_REQUIRED / NO_ORGANIZATION / SELECT_ORGANIZATION / WORKER_WORKSPACE /
+  COMPANY_ADMIN), `MG_GATE.showGate` — reads only RLS-filtered server rows.
+- `index.html`: entry-gated splash dismissal; gate script included in
+  correct order; no tenant UI before authentication resolves (no flicker).
+- `auth-ui.js`: `routeAfterAuth()` after sign-in/sign-up; sign-out returns
+  to the gate.
+- `app.js`: `resolveEntry` integration; worker org context from membership.
+- `sw.js`: gate precached, cache version bumped.
+- `scripts/verify-auth-gate.mjs` (NEW, 21 checks) wired into
+  `scripts/run-all-probes.mjs`.
+
+**Database changes:** none (no RLS modified).
+
+**Tests:** verify-auth-gate 21/21 PASS (self-cleaning); security-scan
+0 CRITICAL; xss-audit clean. Live probe evidence: unauthenticated tenant
+reads 0 rows; forged org id 0 rows; refresh token dead after logout;
+garbage token 401.
+
+**Known limitations:** access token valid until exp after remote logout
+(standard GoTrue JWT semantics, 1h expiry). Full auth-gate doc:
+`AUTHENTICATION_GATE_AND_ENTRY_ROUTING.md`.
 
 ## Feature inventory (baseline, audited)
 

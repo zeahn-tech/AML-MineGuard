@@ -2,8 +2,8 @@
 
 | Field | Value |
 |---|---|
-| Doc status | BASELINE from Phase 00 audit + target locked to Supabase (ADR-008, 2026-09-03). Phases 01–12 landed: multi-tenant foundation, auth, RBAC, site hierarchy, RLS/audit enforcement, safety-domain tables (incidents/JSA/inspections/emergency), offline-first sync, the government grant-gated regulator command center (2026-09-09), and the SaaS/enterprise administration layer (plans/subscriptions modeled with billing deferred; site/settings/subscription/platform RPCs; grant-expiry administration; server-side `gov_national_overview` aggregate — 2026-09-09). |
-| Last updated | 2026-09-09 |
+| Doc status | BASELINE from Phase 00 audit + target locked to Supabase (ADR-008, 2026-09-03). Phases 01–12 landed: multi-tenant foundation, auth, RBAC, site hierarchy, RLS/audit enforcement, safety-domain tables (incidents/JSA/inspections/emergency), offline-first sync, the government grant-gated regulator command center (2026-09-09), the SaaS/enterprise administration layer (2026-09-09), and the organization lifecycle layer (session 18, 2026-09-10): self-service organization creation (create_organization SECURITY DEFINER RPC — atomic org + owner + starter subscription; collision-safe server-side slug; regulator/platform types provisioning-only), controlled ownership transfer (org_transfer_ownership, single-active-owner invariant), selected-organization model (UI preference revalidated against current memberships — never a security boundary), and onboarding/switcher UI. See ORGANIZATION_LIFECYCLE.md. |
+| Last updated | 2026-09-10 |
 
 ---
 

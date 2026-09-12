@@ -323,3 +323,27 @@ deletion step requiring explicit owner approval. (4) `review-lists.json` and the
 gitignored and unimported. (5) Fresh-start means tenant #1's admin dashboards show zero historical
 rows until new production data is created.
 
+## ADR-015 — Self-service organization creation + controlled ownership transfer (2026-09-10)
+
+**Decision.** Normal company onboarding is a first-class platform capability: a signed-in user may
+create a `mining_company`, `contractor`, or `service_provider` organization through the
+SECURITY DEFINER RPC `create_organization(p_name, p_org_type, p_county)` — which atomically
+creates the org, the creator's owner membership (identity from `auth.uid()`, never client data),
+and a starter-plan subscription (existing Phase 12 model; no billing). Regulator/platform orgs remain
+provisioning-only. Slug generation is server-side and collision-safe (`-2`, `-3`…); the UUID
+stays the primary identifier and slugs carry no security meaning. Ownership succession is the
+owner-initiated RPC `org_transfer_ownership` (atomic swap, exactly one active owner invariant,
+admins cannot seize). `bootstrap_first_owner()` is retained for controlled first-deployment
+bootstrap only and is no longer presented as the normal creation path. Organizations INSERT remains
+default-deny — creation is ONLY possible through the approved RPC (no RLS weakening).
+
+**Reason.** `bootstrap_first_owner` is a claim of a pre-seeded memberless org, not a creation
+mechanism: once any org had an owner, every new user hit "no claimable organization found…". A
+multi-tenant SaaS needs self-service tenancy without weakening the tenant boundary.
+
+**Consequences.** (1) Any sign-up can become a tenant owner — mitigated by plan caps (starter:
+3 sites/25 users, Phase 13 enforcement) and audit capture; rate limiting remains an open Phase 13
+control row. (2) The unique `lower(name)` index intentionally rejects duplicate org names even
+when slugs could disambiguate (existing business rule preserved). (3) Ownership transfers and
+creations are audited via the existing triggers. (4) The selected-organization client preference is
+explicitly NOT a security boundary (RLS revalidates every access).
