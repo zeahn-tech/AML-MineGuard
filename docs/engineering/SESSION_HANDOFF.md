@@ -2,9 +2,35 @@
 
 | Field | Value |
 |---|---|
-| Session | 17 — Phase 05 cutover COMPLETE (fresh-start, ADR-014): owner waived the Firestore import; migrations `…097` (safety_notices + acks) + `…098` (soft-delete RPC) applied live; `notices.js` cut over to PostgREST for signed-in users (Firestore = fallback-only); `verify-phase05.mjs` 42/42 PASS self-cleaning; full probe suite (04/05/06/06c/07/08/09/10/11/12/13) all-PASS after audit-trigger-count expectations updated 21→23; **rotations from the session-16 incident still REQUIRED** |
+| Session | 18 — Organization lifecycle + authentication remediation COMPLETE (create_organization + org_transfer_ownership RPCs applied live; onboarding UI create/claim/join; selected-org model + switcher; verify-org-lifecycle 30/30 PASS; full regression all-PASS). Prior: 17 — Phase 05 cutover COMPLETE (fresh-start, ADR-014): owner waived the Firestore import; migrations `…097` (safety_notices + acks) + `…098` (soft-delete RPC) applied live; `notices.js` cut over to PostgREST for signed-in users (Firestore = fallback-only); `verify-phase05.mjs` 42/42 PASS self-cleaning; full probe suite (04/05/06/06c/07/08/09/10/11/12/13) all-PASS after audit-trigger-count expectations updated 21→23; **rotations from the session-16 incident still REQUIRED** |
 | Date | 2026-09-10 |
 | Agent | Buffy (Freebuff/Vly) |
+
+## Session 18 — what was completed (Organization lifecycle + authentication remediation, COMPLETE)
+
+Context: user-reported error `no claimable organization found…` for new sign-ups. Forensic audit
+first (findings in IMPLEMENTATION_STATUS §Session 18), then implementation:
+
+- **Migration `…099_org_lifecycle.sql` applied live (HTTP 201):** `create_organization()`
+  (atomic org + owner + starter subscription; collision-safe slug; type whitelist —
+  regulator/platform rejected; ownership derived from auth.uid(); audit via existing triggers) and
+  `org_transfer_ownership()` (owner-only, atomic swap, single-owner invariant, admins cannot
+  seize); org_type extended with `service_provider`.
+- **Client onboarding UI (admin.html):** Create New Organization / Claim Existing Organization
+  (labeled bootstrap-only) / Join by invitation. `attemptAdminEntry` → `resolveActiveOrg`.
+- **Selected-org model (supabase-auth.js):** preference is UI state, revalidated against CURRENT
+  active memberships; cleared on logout. Org switcher + first-site onboarding card in org-admin.js.
+- **New probe `verify-org-lifecycle.mjs`: 30/30 PASS self-cleaning**; wired into the suite as
+  `olc`. Full regression all-PASS (04, olc, 06, 06c, 07, 08, 09, 10, 11, 12, 13); security scan
+  0 CRITICAL; XSS audit clean.
+- New doc: `ORGANIZATION_LIFECYCLE.md` (full lifecycle + diagrams + security boundaries).
+
+## Session 18 — standing user actions + next session
+
+- STILL OPEN from session 16: rotate service-role key + DB password (SECURITY_CERTIFICATION §2).
+- Phase 13 open control rows unchanged (rate limiting, MFA, media re-encode, DR drill).
+- Full Firestore retirement still requires explicit owner approval (ADR-014).
+- Wire `npm test` into CI to move artifacts to VERIFIED-tier.
 
 ## Session 17 — what was completed (Phase 05 cutover — fresh-start, ADR-014)
 
@@ -785,3 +811,18 @@ been executed anywhere yet — treat as UNVERIFIED until applied + smoke-tested.
 - Preserve worker app UX + offline shell + EN/FR + notices/incident/JSA/SOS semantics.
 - No VERIFIED without recorded evidence; Phase 01 schema is authored-but-UNVERIFIED until applied.
 - Phase order: complete Phase 01 verification before Phase 02 work; do not skip phases.
+
+## Session 19 (2026-09-12) — Authentication gate + entry routing
+
+**Completed:** centralized auth gate (auth-gate.js) with destination
+resolver; entry-gated splash dismissal in index.html; routeAfterAuth in
+auth-ui.js; sign-out → gate; worker screen blocked for unauthenticated users;
+org context always from membership. verify-auth-gate.mjs 21/21 PASS
+(self-cleaning), wired into run-all-probes. Security scan 0 CRITICAL,
+xss-audit clean. New doc: AUTHENTICATION_GATE_AND_ENTRY_ROUTING.md.
+
+**Next-session actions:** none required for the gate itself; standing items —
+credential rotation (session-16 incident), Phase 13 open control rows
+(rate limiting, MFA, media re-encode, DR drill), CI wiring, Firestore
+retirement approval.
+

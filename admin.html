@@ -1168,7 +1168,29 @@
     <div class="login-error" id="loginError"></div>
     <div id="loginClaimWrap" style="display:none;margin-top:14px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;" id="loginClaimHint"></div>
-      <button class="login-btn" style="background:linear-gradient(135deg,#2ec4b6,#1d9a8e);color:#fff;" id="loginClaimBtn" onclick="claimOrgOwnership()">🏗️ Set Up Organization (Owner)</button>
+      <div id="loginOnboardOptions" style="display:none;">
+        <button class="login-btn" style="background:linear-gradient(135deg,#2ec4b6,#1d9a8e);color:#fff;" id="loginCreateOrgBtn" onclick="showCreateOrgForm()">🏗️ Create New Organization</button>
+        <button class="login-btn" style="background:linear-gradient(135deg,#3b6ea5,#2c5480);color:#fff;margin-top:8px;" id="loginClaimBtn" onclick="claimOrgOwnership()">🔑 Claim Existing Organization</button>
+        <div style="font-size:11px;color:var(--text2);line-height:1.5;margin-top:10px;">
+          <b>Create</b> — register a new company as its owner (recommended).<br>
+          <b>Claim</b> — first-deployment bootstrap only: take ownership of a seeded, memberless organization.<br>
+          <b>Join</b> — ask an organization admin to invite you, then accept the invitation link from your email.
+        </div>
+      </div>
+      <div id="loginCreateOrgForm" style="display:none;margin-top:8px;">
+        <label class="login-label">Organization name</label>
+        <input type="text" class="login-input" id="loginOrgName" placeholder="ABC Mining Liberia" maxlength="120" />
+        <label class="login-label">Type</label>
+        <select class="login-input" id="loginOrgType">
+          <option value="mining_company">Mining company</option>
+          <option value="contractor">Contractor</option>
+          <option value="service_provider">Service provider</option>
+        </select>
+        <label class="login-label">County (optional)</label>
+        <input type="text" class="login-input" id="loginOrgCounty" placeholder="Nimba" maxlength="60" />
+        <button class="login-btn" style="background:linear-gradient(135deg,#2ec4b6,#1d9a8e);color:#fff;margin-top:6px;" id="loginCreateOrgSubmit" onclick="submitCreateOrg()">🏗️ Create Organization</button>
+        <button class="login-btn" style="background:#333;color:#ccc;margin-top:8px;" onclick="showOnboardOptions()">← Back</button>
+      </div>
     </div>
     <div class="login-hint">Secure sign-in · Powered by Supabase Auth</div>
   </div>
@@ -1772,6 +1794,57 @@ function showClaimStep(message) {
   const wrap = document.getElementById('loginClaimWrap');
   if (hint) hint.textContent = message || '';
   if (wrap) wrap.style.display = 'block';
+  showOnboardOptions();
+}
+
+function showOnboardOptions() {
+  const opts = document.getElementById('loginOnboardOptions');
+  const form = document.getElementById('loginCreateOrgForm');
+  if (opts) opts.style.display = 'block';
+  if (form) form.style.display = 'none';
+}
+
+function showCreateOrgForm() {
+  const opts = document.getElementById('loginOnboardOptions');
+  const form = document.getElementById('loginCreateOrgForm');
+  if (opts) opts.style.display = 'none';
+  if (form) form.style.display = 'block';
+  const nameInput = document.getElementById('loginOrgName');
+  if (nameInput) nameInput.focus();
+}
+
+function submitCreateOrg() {
+  const btn = document.getElementById('loginCreateOrgSubmit');
+  const nameEl = document.getElementById('loginOrgName');
+  const typeEl = document.getElementById('loginOrgType');
+  const countyEl = document.getElementById('loginOrgCounty');
+  const name = (nameEl && nameEl.value || '').trim();
+  const type = (typeEl && typeEl.value) || 'mining_company';
+  const county = (countyEl && countyEl.value) || null;
+  if (!name) { showLoginError('Please enter an organization name.'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Creating…'; }
+  hideLoginError();
+  MG_AUTH.createOrganization(name, type, county)
+    .then(function (res) {
+      if (btn) { btn.disabled = false; btn.textContent = '🏗️ Create Organization'; }
+      hideClaimStep();
+      // Select the new org explicitly, then enter the dashboard (first-site
+      // onboarding is offered by the Organization panel when no sites exist).
+      try { MG_AUTH.setSelectedOrgId(res.organization_id); } catch (e) {}
+      return attemptAdminEntry();
+    })
+    .catch(function (err) {
+      if (btn) { btn.disabled = false; btn.textContent = '🏗️ Create Organization'; }
+      const msg = (err && err.message) || '';
+      // Friendly messages; raw DB implementation details are not shown.
+      if (/cannot be self-registered/i.test(msg)) {
+        showLoginError('This organization type requires authorization from the platform administrator.');
+      } else if (/unique|slug|duplicate/i.test(msg)) {
+        showLoginError('An organization with a very similar name already exists. Please choose a different name.');
+      } else {
+        showLoginError('Organization creation failed. Please check your connection and try again.');
+      }
+    });
 }
 
 function hideClaimStep() {
@@ -1802,39 +1875,48 @@ function doLogin() {
     });
 }
 
-// Enter the dashboard when an active owner/admin membership exists; otherwise
-// offer the first-owner bootstrap (only valid while the org has no members).
+// Enter the dashboard using the resolved active organization (validated against
+// CURRENT memberships — the stored preference is UI state only, never a security
+// boundary). Cases: 1 active org → enter; multiple → org chooser; none →
+// onboarding options (create new org / claim seeded org / join by invitation).
 function attemptAdminEntry() {
   setLoginBusy(true);
   hideClaimStep();
-  return MG_AUTH.fetchMyMemberships()
-    .then(function (mems) {
+  // Preferred: the selected-org model (session 18). Defensive fallback for a
+  // stale-cached supabase-auth.js without resolveActiveOrg: resolve directly
+  // from current memberships (owner/admin first, then first active).
+  var resolve = MG_AUTH.resolveActiveOrg
+    ? MG_AUTH.resolveActiveOrg()
+    : MG_AUTH.fetchMyMemberships().then(function (mems) {
+        var active = (mems || []).filter(function (m) { return m.status === 'active'; });
+        return active.find(function (m) { return m.role === 'owner' || m.role === 'admin'; }) || active[0] || null;
+      });
+  return Promise.resolve(resolve)
+    .then(function (chosen) {
       setLoginBusy(false);
-      const list = mems || [];
-      if (list.some(hasAdminRole)) { enterDashboard(); return; }
-      if (list.length) {
-        showLoginError('Signed in, but this account has no administrator role for any organization.');
-        return;
-      }
-      showClaimStep('You are signed in but not yet linked to an organization. If you are the first administrator of this MineGuard deployment, set up the seeded organization now.');
+      if (chosen) { enterDashboard(); return; }
+      showClaimStep('Your account is not yet connected to an organization. Create an organization, claim this deployment’s seeded organization (first-deployment bootstrap only), or join one by invitation.');
     })
     .catch(function () { setLoginBusy(false); showLoginError('Could not verify organization access. Please retry.'); });
 }
 
 function claimOrgOwnership() {
   const btn = document.getElementById('loginClaimBtn');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Setting up…'; }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Checking…'; }
   hideLoginError();
   MG_AUTH.bootstrapFirstOwner()
     .then(function () {
-      if (btn) { btn.disabled = false; btn.textContent = '🏗️ Set Up Organization (Owner)'; }
+      if (btn) { btn.disabled = false; btn.textContent = '🔑 Claim Existing Organization'; }
       hideClaimStep();
       return attemptAdminEntry();
     })
     .catch(function (err) {
-      if (btn) { btn.disabled = false; btn.textContent = '🏗️ Set Up Organization (Owner)'; }
-      showLoginError((err && err.message) || 'Setup failed — an owner may already exist for this organization.');
-      hideClaimStep();
+      if (btn) { btn.disabled = false; btn.textContent = '🔑 Claim Existing Organization'; }
+      // Bootstrap is first-deployment-only: every seeded org already having
+      // an owner is EXPECTED after initialization. Steer to Create instead of
+      // surfacing raw database internals.
+      showLoginError('This deployment has already been initialized — no claimable organization remains. Use "Create New Organization" instead.');
+      showOnboardOptions();
     });
 }
 
@@ -1859,6 +1941,14 @@ function doLogout() {
       if (!session) { try { document.getElementById('loginUser').focus(); } catch (e) {} return; }
       MG_AUTH.fetchMyMemberships().then(function (mems) {
         if ((mems || []).some(hasAdminRole)) enterDashboard();
+        else if (MG_AUTH.resolveActiveOrg) {
+          // Non-admin active members: resolveActiveOrg grants entry to their own
+          // org context (RLS still scopes every panel read/write server-side).
+          MG_AUTH.resolveActiveOrg().then(function (chosen) {
+            if (chosen) enterDashboard();
+            else try { document.getElementById('loginUser').focus(); } catch (e) {}
+          }).catch(function () { try { document.getElementById('loginUser').focus(); } catch (e) {} });
+        }
         else try { document.getElementById('loginUser').focus(); } catch (e) {}
       }).catch(function () { try { document.getElementById('loginUser').focus(); } catch (e) {} });
     }).catch(function () {});
@@ -3139,7 +3229,12 @@ async function publishNotice() {
     if (auth && auth.createSafetyNotice && auth.getSession && auth.getSession()) {
       try {
         const memberships = await auth.fetchMyMemberships();
-        const orgId = memberships && memberships.length ? memberships[0].organization_id : null;
+        const activeMems = (memberships || []).filter(function (m) { return m.status === 'active'; });
+        const selOrg = auth.getSelectedOrgId && auth.getSelectedOrgId();
+        const chosenMem = (selOrg && activeMems.find(function (m) { return m.organization_id === selOrg; }))
+          || activeMems.find(function (m) { return m.role === 'owner' || m.role === 'admin'; })
+          || activeMems[0];
+        const orgId = chosenMem ? chosenMem.organization_id : null;
         if (orgId) {
           await auth.createSafetyNotice(orgId, {
             client_id: notice.client_id || (window.MG_STORE ? window.MG_STORE.newClientId('notice') : null),

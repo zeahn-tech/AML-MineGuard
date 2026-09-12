@@ -4,6 +4,27 @@ Format: date · change · docs · status.
 
 ---
 
+## 2026-09-10 (session 18) — Organization lifecycle + authentication remediation COMPLETE
+
+- **Root cause (user-reported error):** `bootstrap_first_owner()` is a claim mechanism (oldest
+  memberless mining_company org); once every org has an owner it raises `no claimable organization
+  found…`. No self-service organization creation existed (org INSERT default-deny).
+- Migration `20260903000099_org_lifecycle.sql` applied live: `create_organization()`
+  SECURITY DEFINER (atomic org + owner membership + starter subscription; collision-safe slug;
+  mining_company/contractor/service_provider only; regulator/platform rejected; audit via existing
+  triggers; no new RLS policies — INSERT stays default-deny) + `org_transfer_ownership()`
+  (owner-only atomic swap, single-owner invariant, admins cannot seize) + org_type `service_provider`.
+- Client: onboarding UI (Create / Claim / Join) replacing "Set Up Organization (Owner)"; selected-org
+  model revalidated against current memberships (UI state only); org switcher; first-site onboarding
+  via existing `site_create`; logout clears the org preference.
+- Evidence: `verify-org-lifecycle.mjs` 30/30 PASS self-cleaning (incl. forged owner/role/status
+  denials, anon 401, regulator/platform 400, isolation, single-owner invariant); full regression
+  all-PASS (04, olc, 06, 06c, 07, 08, 09, 10, 11, 12, 13); scan 0 CRITICAL; XSS clean.
+- New doc: ORGANIZATION_LIFECYCLE.md. Updated: IMPLEMENTATION_STATUS, SESSION_HANDOFF, DECISIONS
+  (ADR-015), PROJECT_MASTER, ARCHITECTURE, DATABASE_ARCHITECTURE, SECURITY_MODEL, RBAC_MODEL,
+  RLS_MATRIX, supabase/README.
+- Status: COMPLETE — not VERIFIED-tier (CI wiring still open).
+
 ## 2026-09-10 (session 17) — Phase 05 cutover COMPLETE: fresh-start (ADR-014), safety notices live, client cut over
 
 - **ADR-014 recorded** (owner directive): the Firestore data migration is WAIVED — fresh start in
@@ -370,3 +391,18 @@ audit log, connectivity indicators).
 
 Next
 - Phase 01 definition and gates recorded in SESSION_HANDOFF.md; see Phase 01 "Next task".
+
+## Session 19 (2026-09-12)
+
+- NEW `auth-gate.js`: authentication gate + centralized destination resolver
+  (AUTH_REQUIRED / NO_ORGANIZATION / SELECT_ORGANIZATION / WORKER_WORKSPACE /
+  COMPANY_ADMIN) reading only RLS-filtered server rows.
+- index.html: splash dismissal now entry-gated; worker workspace no longer
+  reachable unauthenticated; no protected-UI flicker before auth resolves.
+- auth-ui.js: sign-in/sign-up route via `routeAfterAuth`; sign-out returns
+  to the gate and clears selected-org preference + private tenant state.
+- sw.js: gate precached; cache version bumped.
+- Tests: `scripts/verify-auth-gate.mjs` (21 checks) wired into the durable
+  suite; 21/21 PASS live. Security scan 0 CRITICAL; XSS audit clean.
+- Docs: AUTHENTICATION_GATE_AND_ENTRY_ROUTING.md (new).
+

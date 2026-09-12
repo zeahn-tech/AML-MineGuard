@@ -105,7 +105,11 @@
     el("mgAuthSignOut").addEventListener("click", function () {
       if (busy) return;
       busy = true;
-      MG_AUTH.signOut().then(function () { busy = false; closeModal(); renderChip(); });
+      MG_AUTH.signOut().then(function () {
+      busy = false; closeModal(); renderChip();
+      // Return to the authentication gate; protected state is hidden again.
+      if (window.MG_GATE) MG_GATE.showGate();
+    });
     });
   }
 
@@ -138,6 +142,9 @@
       if (res.session) {
         closeModal();
         renderChip();
+        // Authentication gate: after sign-in/sign-up, route to the resolved
+        // destination instead of silently remaining on the same screen.
+        routeAfterAuth();
       } else {
         showError(tr("authConfirmEmail"));
       }
@@ -145,6 +152,34 @@
       busy = false;
       el("mgAuthSubmit").disabled = false;
       showError((err && err.message) || tr("authFailed"));
+    });
+  }
+
+  // Route to the destination resolved from CURRENT server-side memberships
+  // (the gate resolver in auth-gate.js is the single source of truth).
+  function routeAfterAuth() {
+    if (!(window.MG_GATE && window.MG_AUTH)) return;
+    window.MG_GATE.resolveDestination(MG_AUTH).then(function (dest) {
+      if (dest === "COMPANY_ADMIN" || dest === "GOVERNMENT_WORKSPACE") {
+        window.location.replace("admin.html");
+      } else if (dest === "AUTH_REQUIRED") {
+        if (window.MG_GATE) MG_GATE.showGate();
+      } else if (dest === "NO_ORGANIZATION" || dest === "SELECT_ORGANIZATION") {
+        // Stay on the workspace (reference tabs usable); surface guidance.
+        if (window.MG_GATE) {
+          MG_GATE.showGate();
+          MG_GATE.showGateMsg(
+            dest === "NO_ORGANIZATION"
+              ? (window.t ? t("gateNoOrg") : "No organization has been assigned to your account yet. Ask your administrator for an invitation, or create your own organization.")
+              : (window.t ? t("gateSelectOrg") : "You belong to more than one organization. Open the account menu to choose which one to work in."),
+            "info");
+        }
+      } else {
+        // WORKER_WORKSPACE: hide the gate, reveal the authenticated shell.
+        if (window.MG_GATE) MG_GATE.hideGate();
+        var app = document.getElementById("app");
+        if (app) app.classList.remove("hidden");
+      }
     });
   }
 

@@ -22,6 +22,8 @@ if (!TOKEN) {
 
 const PROBES = [
   ["04",  "verify-phase04.mjs",        "Phase 04 — site hierarchy + org-admin flows"],
+  ["olc", "verify-org-lifecycle.mjs",  "Org lifecycle — creation + ownership transfer + isolation"],
+  ["gate", "verify-auth-gate.mjs",     "Auth gate — entry routing + destination resolver + logout"],
   ["05",  "verify-phase05.mjs",        "Phase 05 — fresh-start cutover (safety notices)"],
   ["06",  "verify-phase06.mjs",        "Phase 06 — RLS + audit foundation"],
   ["06c", "verify-phase06-cascade.mjs","Phase 06 — cascade-delete regression"],

@@ -94,19 +94,26 @@
 
   // ---- data loading --------------------------------------------------------
   function pickOrg() {
-    return MG_AUTH.fetchMyMemberships().then(function (mems) {
-      var list = mems || [];
-      if (!list.length) return null;
-      // Prefer the first active owner/admin membership (dashboard entry already
-      // guarantees at least one exists).
-      var admin = list.find(function (m) { return m.status === "active" && (m.role === "owner" || m.role === "admin"); });
-      return (admin || list[0]).organization_id;
+    // Selected-organization model: the stored preference is validated against
+    // CURRENT active memberships (server truth); it is UI state, never a
+    // security boundary — every panel read/write is RLS-scoped anyway.
+    return MG_AUTH.resolveActiveOrg().then(function (chosen) {
+      return chosen ? chosen.organization_id : null;
     }).catch(function () { return null; });
   }
 
   function load(orgId) {
     if (!orgId) return Promise.reject(new Error("No organization"));
     state.orgId = orgId;
+    // Load ALL active memberships (for the switcher) in parallel; org names are
+    // resolved via RLS-scoped reads so users only ever see orgs they belong to.
+    MG_AUTH.fetchMyMemberships().then(function (mems) {
+      var active = (mems || []).filter(function (m) { return m.status === "active"; });
+      state.myMemberships = active;
+      return Promise.all(active.map(function (m) {
+        return MG_AUTH.fetchOrganization(m.organization_id).then(function (o) { m._org = o || {}; });
+      }));
+    }).catch(function () { state.myMemberships = []; });
     return Promise.all([
       MG_AUTH.fetchOrganization(orgId),
       MG_AUTH.fetchOrgSites(orgId),
@@ -167,6 +174,37 @@
     h.push('<div class="section-hdr"><h3>🏢 ' + esc(org.name || "Organization") + '</h3><span style="font-size:12px;color:var(--text2);">' +
       esc(org.org_type || "") + (org.county ? " · " + esc(org.county) : "") + '</span></div>');
     h.push('<div id="orgAdminStatus" style="display:none;margin-bottom:12px;font-size:13px;font-weight:600;"></div>');
+
+    // --- Organization switcher (users with multiple active memberships) ---
+    if ((state.myMemberships || []).length > 1) {
+      h.push('<div style="display:flex;gap:10px;align-items:center;margin:0 0 14px;">');
+      h.push('<label class="nc-form-label" style="font-size:10px;margin:0;">Organization</label>');
+      h.push('<select id="org-switcher" class="nc-form-select" style="width:auto;min-width:220px;">');
+      state.myMemberships.forEach(function (m) {
+        var o = m._org || {};
+        h.push('<option value="' + esc(m.organization_id) + '"' +
+          (m.organization_id === state.orgId ? " selected" : "") + '>' +
+          esc(o.name || m.organization_id) + " (" + esc(m.role) + ")</option>");
+      });
+      h.push('</select></div>');
+    }
+
+    // --- First-site onboarding (organization lifecycle, session 18) ---
+    if (!state.sites || !state.sites.length) {
+      h.push('<div class="card-block" style="margin-bottom:20px;border-color:rgba(46,196,182,0.4);background:rgba(46,196,182,0.06);">');
+      h.push('<div class="settings-group-title">🚀 Add your first mining site</div>');
+      h.push('<div style="font-size:13px;color:var(--text2);margin:8px 0;">Your organization is ready. Sites are where incidents, JSAs and inspections live — add your first one to get started.</div>');
+      if (state.canCreateSites) {
+        h.push('<div style="display:flex;gap:10px;flex-wrap:wrap;margin:6px 0;align-items:flex-end;">');
+        h.push('<div><label class="nc-form-label" style="font-size:10px;">Site name</label><input id="onb-site-name" class="nc-form-input" style="width:200px;" placeholder="Nimba Mine" /></div>');
+        h.push('<div><label class="nc-form-label" style="font-size:10px;">Location</label><input id="onb-site-loc" class="nc-form-input" style="width:160px;" placeholder="Yekepa" /></div>');
+        h.push('<button class="filter-btn" id="onb-site-create" style="background:rgba(46,196,182,0.12);color:var(--green);border-color:rgba(46,196,182,0.35);">Create First Site</button>');
+        h.push('</div>');
+      } else {
+        h.push('<div style="font-size:12px;color:var(--text3);">You need the sites.create permission (owner/admin) to add a site.</div>');
+      }
+      h.push('</div>');
+    }
 
     // --- Plan & settings (Phase 12: SaaS + enterprise administration) ---
     h.push('<div class="card-block" style="margin-bottom:20px;">');
@@ -399,6 +437,37 @@
     if (osSave) osSave.addEventListener("click", onSaveSettings);
     var subSave = el("sub-save");
     if (subSave) subSave.addEventListener("click", onSavePlan);
+    // --- First-site onboarding binding (session 18) ---
+    var onbCreate = el("onb-site-create");
+    if (onbCreate) onbCreate.addEventListener("click", onFirstSiteCreate);
+    // --- Organization switcher (multi-membership users) ---
+    var orgSwitch = el("org-switcher");
+    if (orgSwitch) orgSwitch.addEventListener("change", function () {
+      var v = orgSwitch.value;
+      if (!v) return;
+      // Only memberships the server already confirmed (active) are offered in
+      // the dropdown; RLS re-validates every read/write regardless.
+      MG_AUTH.setSelectedOrgId(v);
+      render();
+    });
+  }
+
+  function onFirstSiteCreate() {
+    var nameEl = el("onb-site-name");
+    var locEl = el("onb-site-loc");
+    var name = nameEl ? nameEl.value.trim() : "";
+    if (!name) { statusLine("Please enter a site name.", true); return; }
+    setBusy(true, "onb-site-create");
+    MG_AUTH.siteCreate(state.orgId, name, locEl ? locEl.value.trim() : null, null)
+      .then(function () {
+        setBusy(false, "onb-site-create");
+        statusLine("First site created. Welcome aboard! 🎉", false);
+        render();
+      })
+      .catch(function (err) {
+        setBusy(false, "onb-site-create");
+        statusLine((err && err.message) || "Could not create the site.", true);
+      });
   }
 
   // ---- Phase 12 actions ----------------------------------------------------

@@ -156,6 +156,8 @@ scope, never blanket.
 | 12 | SaaS + enterprise administration | COMPLETE (2026-09-09, live-verified on Supabase project: plans/subscriptions modeled (billing deferred), site/settings/subscription RPCs, grant-expiry administration (5-arg issue + extend), platform bootstrap/list/status layer, server-side `gov_national_overview` aggregate, dedicated subscriptions audit trigger; probe 31/31 self-cleaning; see IMPLEMENTATION_STATUS) |
 | 13 | Production hardening + security certification | COMPLETE (2026-09-10, live-verified on Supabase project: secret-leak incident remediated (committed service-role key + DB password removed — **rotations still REQUIRED**, SECURITY_CERTIFICATION §2); automated security scan in `npm test` (0 CRITICAL); durable probe suite = one command; migration `…096` applied (max_sites enforcement + audited grant-expiry sweep); verify-phase13 27/27 self-cleaning; full regression all-PASS; XSS suite/rate limiting/MFA/media re-encode/DR drill remain open control rows — see IMPLEMENTATION_STATUS + SECURITY_CERTIFICATION) |
 
+Session 18 (2026-09-10): organization lifecycle remediation — self-service `create_organization` RPC (atomic org + owner + starter subscription; regulator/platform provisioning-only) + `org_transfer_ownership` + onboarding/switcher UI + `verify-org-lifecycle.mjs` 30/30 PASS. See `ORGANIZATION_LIFECYCLE.md` and DECISIONS ADR-015.
+
 Live per-phase detail: `IMPLEMENTATION_STATUS.md`.
 
 ## 12. Non-negotiable requirements

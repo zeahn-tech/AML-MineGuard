@@ -6,6 +6,11 @@ see `docs/engineering/DECISIONS.md` ADR-008. PostgREST's plain-HTTPS JSON API is
 
 ## Live status (2026-09-10)
 
+Session 18 (organization lifecycle) is COMPLETE: migration
+`…099_org_lifecycle.sql` applied — `create_organization` (self-service, atomic org + owner +
+starter subscription; regulator/platform rejected) + `org_transfer_ownership` (owner-only atomic
+swap); `verify-org-lifecycle.mjs` 30/30 PASS self-cleaning.
+
 Phase 05 cutover (fresh-start, ADR-014) is COMPLETE: migrations `…097_phase05_cutover_notices.sql`
 (`safety_notices` + `safety_notice_acks` + 2 audit triggers → 23 total) and `…098` (probe-driven
 `notice_soft_delete` SECURITY DEFINER RPC) applied 2026-09-10; `verify-phase05.mjs` 42/42 PASS
