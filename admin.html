@@ -1171,10 +1171,12 @@
       <div id="loginOnboardOptions" style="display:none;">
         <button class="login-btn" style="background:linear-gradient(135deg,#2ec4b6,#1d9a8e);color:#fff;" id="loginCreateOrgBtn" onclick="showCreateOrgForm()">🏗️ Create New Organization</button>
         <button class="login-btn" style="background:linear-gradient(135deg,#3b6ea5,#2c5480);color:#fff;margin-top:8px;" id="loginClaimBtn" onclick="claimOrgOwnership()">🔑 Claim Existing Organization</button>
+        <button class="login-btn" style="background:linear-gradient(135deg,#4361ee,#3a51b8);color:#fff;margin-top:8px;" id="loginJoinBtn" onclick="MG_JOIN.showJoinForm()">👥 Join an Existing Organization</button>
         <div style="font-size:11px;color:var(--text2);line-height:1.5;margin-top:10px;">
           <b>Create</b> — register a new company as its owner (recommended).<br>
           <b>Claim</b> — first-deployment bootstrap only: take ownership of a seeded, memberless organization.<br>
-          <b>Join</b> — ask an organization admin to invite you, then accept the invitation link from your email.
+          <b>Join</b> — search for your organization and request membership (the organization must accept join requests); an admin approves it.
+          <b>Invite</b> — if you have an invitation link/token, open it or accept it after signing in.
         </div>
       </div>
       <div id="loginCreateOrgForm" style="display:none;margin-top:8px;">
@@ -1189,6 +1191,13 @@
         <label class="login-label">County (optional)</label>
         <input type="text" class="login-input" id="loginOrgCounty" placeholder="Nimba" maxlength="60" />
         <button class="login-btn" style="background:linear-gradient(135deg,#2ec4b6,#1d9a8e);color:#fff;margin-top:6px;" id="loginCreateOrgSubmit" onclick="submitCreateOrg()">🏗️ Create Organization</button>
+        <button class="login-btn" style="background:#333;color:#ccc;margin-top:8px;" onclick="showOnboardOptions()">← Back</button>
+      </div>
+      <div id="loginJoinOrgForm" style="display:none;margin-top:8px;">
+        <label class="login-label">Find your organization</label>
+        <input type="text" class="login-input" id="loginJoinQuery" placeholder="Search by organization name" maxlength="80" oninput="MG_JOIN.searchDebounced()" />
+        <div id="loginJoinResults" style="margin:8px 0;max-height:180px;overflow-y:auto;"></div>
+        <div class="login-error" id="loginJoinError" style="display:none;"></div>
         <button class="login-btn" style="background:#333;color:#ccc;margin-top:8px;" onclick="showOnboardOptions()">← Back</button>
       </div>
     </div>
@@ -1496,6 +1505,7 @@
 
         <!-- ORGANIZATION PANEL (Phase 04 — hierarchy, members, invites, workers) -->
         <div class="panel" id="panel-organization">
+          <div id="mgJoinCardHost"></div>
           <div id="orgAdminRoot"></div>
         </div>
 
@@ -1726,8 +1736,10 @@
 <script src="firebase.js"></script>
 <script src="config.js"></script>
 <script src="supabase-auth.js"></script>
+<script src="push-client.js"></script>
+<script src="join-requests.js"></script>
 <script src="org-admin.js"></script>
-<script src="gov-admin.js"></script><script src="org-admin.js"></script>
+<script src="gov-admin.js"></script>
 
 <script>
 // ============================================================
@@ -1777,6 +1789,20 @@ function hasAdminRole(m) {
   return !!(m && m.status === 'active' && (m.role === 'owner' || m.role === 'admin'));
 }
 
+// Session 21 — worker route guard. The Admin Dashboard is ROLE-PROTECTED
+// surface: active members without an admin/owner role (workers, contractors,
+// supervisors…) are refused here at the UI layer. The real boundary is the
+// backend: every admin RPC re-checks require_org_admin / RBAC permissions and
+// RLS filters all admin reads, so a worker who manipulates the client still
+// receives no administrative data (WORKER_MEMBERSHIP_AND_INVITATION_LIFECYCLE.md §9).
+function showWorkerRefusal() {
+  const err = document.getElementById('loginError');
+  if (err) {
+    err.textContent = 'Your account uses the MineGuard worker app. Administrative access requires an organization admin or owner role — ask your administrator if you need elevated access.';
+    err.style.display = 'block';
+  }
+}
+
 function enterDashboard() {
   if (_dashboardStarted) return;
   _dashboardStarted = true;
@@ -1800,15 +1826,19 @@ function showClaimStep(message) {
 function showOnboardOptions() {
   const opts = document.getElementById('loginOnboardOptions');
   const form = document.getElementById('loginCreateOrgForm');
+  const joinForm = document.getElementById('loginJoinOrgForm');
   if (opts) opts.style.display = 'block';
   if (form) form.style.display = 'none';
+  if (joinForm) joinForm.style.display = 'none';
 }
 
 function showCreateOrgForm() {
   const opts = document.getElementById('loginOnboardOptions');
   const form = document.getElementById('loginCreateOrgForm');
+  const joinForm = document.getElementById('loginJoinOrgForm');
   if (opts) opts.style.display = 'none';
   if (form) form.style.display = 'block';
+  if (joinForm) joinForm.style.display = 'none';
   const nameInput = document.getElementById('loginOrgName');
   if (nameInput) nameInput.focus();
 }
@@ -1895,7 +1925,18 @@ function attemptAdminEntry() {
     .then(function (chosen) {
       setLoginBusy(false);
       if (chosen) { enterDashboard(); return; }
-      showClaimStep('Your account is not yet connected to an organization. Create an organization, claim this deployment’s seeded organization (first-deployment bootstrap only), or join one by invitation.');
+      // Distinguish an authenticated WORKER (has membership, no admin role)
+      // from an orgless account: workers get the refusal + worker-app link.
+      return MG_AUTH.fetchMyMemberships().then(function (mems) {
+        const active = (mems || []).filter(function (m) { return m.status === 'active'; });
+        if (active.length && !active.some(hasAdminRole)) {
+          showWorkerRefusal();
+          const err = document.getElementById('loginError');
+          if (err && !err.textContent) showWorkerRefusal();
+          return;
+        }
+        showClaimStep('Your account is not yet connected to an organization. Create an organization, claim this deployment’s seeded organization (first-deployment bootstrap only), or join one by invitation.');
+      });
     })
     .catch(function () { setLoginBusy(false); showLoginError('Could not verify organization access. Please retry.'); });
 }
@@ -1941,6 +1982,11 @@ function doLogout() {
       if (!session) { try { document.getElementById('loginUser').focus(); } catch (e) {} return; }
       MG_AUTH.fetchMyMemberships().then(function (mems) {
         if ((mems || []).some(hasAdminRole)) enterDashboard();
+        else if ((mems || []).some(function (m) { return m.status === 'active'; })) {
+          // Session 21: authenticated worker (non-admin role) → refuse with
+          // guidance instead of silently showing an empty login form.
+          showWorkerRefusal();
+        }
         else if (MG_AUTH.resolveActiveOrg) {
           // Non-admin active members: resolveActiveOrg grants entry to their own
           // org context (RLS still scopes every panel read/write server-side).

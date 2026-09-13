@@ -64,7 +64,7 @@ window.TRANSLATIONS = {
     gateForgot: "Forgot Password?",
     gateForgotSent: "Password reset is not available yet. Contact your organization administrator.",
     gateInviteHint: "Sign in with the invited email, then use the invitation link your administrator sent you.",
-    gateNoOrg: "No organization has been assigned to your account yet. Ask your administrator for an invitation, or create your own organization.",
+    gateNoOrg: "No organization has been assigned to your account yet. Ask your administrator for an invitation, join your organization from the admin sign-in screen, or create your own organization.",
     gateSelectOrg: "You belong to more than one organization. Open the account menu to choose which one to work in.",
 
     // Glossary
@@ -243,7 +243,7 @@ window.TRANSLATIONS = {
     gateForgot: "Mot de passe oublié ?",
     gateForgotSent: "La réinitialisation du mot de passe n’est pas encore disponible. Contactez l’administrateur de votre organisation.",
     gateInviteHint: "Connectez-vous avec l’e-mail invité, puis utilisez le lien d’invitation envoyé par votre administrateur.",
-    gateNoOrg: "Aucune organisation n’est encore associée à votre compte. Demandez une invitation à votre administrateur ou créez votre propre organisation.",
+    gateNoOrg: "Aucune organisation n’est encore associée à votre compte. Demandez une invitation à votre administrateur, rejoignez votre organisation depuis l’écran de connexion admin, ou créez votre propre organisation.",
     gateSelectOrg: "Vous appartenez à plusieurs organisations. Ouvrez le menu de compte pour choisir dans laquelle travailler.",
     authFailed: "Échec de la connexion. Réessayez.",
 

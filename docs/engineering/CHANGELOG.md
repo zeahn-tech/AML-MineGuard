@@ -4,6 +4,29 @@ Format: date · change · docs · status.
 
 ---
 
+## 2026-09-13 (session 21) — Worker join requests + admin approval + invitations + notifications/push COMPLETE
+
+- Worker-initiated join requests: opt-in-only discovery TVF (minimum public fields, restrictive
+  default), request RPC with server-set worker role + duplicate/member guards, race-safe admin
+  review RPC (require_org_admin; FOR UPDATE + status re-check; approval upserts ACTIVE worker
+  membership; rejection never creates membership; both notify the requester), admin review card +
+  notification bell + opt-in toggle (join-requests.js), onboarding Join flow (admin.html).
+- Notifications store (own-row RLS, server-written) + my_notifications / mark_notification_read.
+- Push foundation …113: push_subscriptions (SHA-256-hashed endpoints, RFC 8291 keys server-side
+  only, RPC-only writes, own-row RLS) + register/deregister_push_subscription + push-client.js
+  (graceful no-op until VAPID key; SW push display already present). In-app stays authoritative.
+- Security fix …112: organization_join_requests_list now require_org_admin-gated server-side
+  (the …110 TVF relied on the client gate only).
+- Regression fix …114: restored Phase 04 organizational_units.* permission rows lost in the
+  earlier catalog wipe (probe-caught via verify-phase04).
+- Migrations …110–…114 applied live (HTTP 201); verify-worker-join 49/49 + verify-push-foundation
+  9/9 PASS self-cleaning; full regression all-PASS; security-scan 0 CRITICAL / 16 HIGH baseline;
+  xss-audit clean (9 files).
+- Docs: WORKER_MEMBERSHIP_AND_INVITATION_LIFECYCLE.md (new); IMPLEMENTATION_STATUS + SESSION_HANDOFF
+  updated.
+
+---
+
 ## 2026-09-10 (session 18) — Organization lifecycle + authentication remediation COMPLETE
 
 - **Root cause (user-reported error):** `bootstrap_first_owner()` is a claim mechanism (oldest
@@ -405,4 +428,21 @@ Next
 - Tests: `scripts/verify-auth-gate.mjs` (21 checks) wired into the durable
   suite; 21/21 PASS live. Security scan 0 CRITICAL; XSS audit clean.
 - Docs: AUTHENTICATION_GATE_AND_ENTRY_ROUTING.md (new).
+
+## Session 20 (2026-09-12) — Regulator organization claim + provisioning
+
+- Migrations applied live: …100 regulator lifecycle (provision_regulator_organization
+  + regulator_claim_status TVF), …101 organization_members_role_check extended with
+  platform roles (fixes latent 23514 in bootstrap_first_platform_admin), …102 RBAC
+  catalog reseed (16 roles / 62 permissions / 428 bundles / 3 plans — verbatim from
+  …030/…073/…094; live catalog rows had been lost).
+- gov-admin.js: claim surface state-driven (server TVF), confirmation modal, inline
+  outcomes — silent no-op eliminated. supabase-auth.js: regulatorClaimStatus wrapper.
+  org-admin.js: Government Regulator panel state. sw.js cache bumped.
+- Tests: scripts/verify-regulator-lifecycle.mjs 33/33 PASS (self-cleaning), wired into
+  run-all-probes as reg; verify-phase11 de-seeded to self-cleaning fixtures (48/48);
+  full regression green (04/06/06c/07/08/09/10/11/12/13/olc/gate); security-scan
+  0 CRITICAL; xss-audit clean.
+- Docs: REGULATOR_ORGANIZATION_LIFECYCLE.md (new); IMPLEMENTATION_STATUS,
+  SESSION_HANDOFF, CHANGELOG updated.
 

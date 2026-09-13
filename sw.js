@@ -5,7 +5,7 @@
 //        offline navigation fallback
 // ============================================
 
-const CACHE_NAME = 'mineguard-v13';
+const CACHE_NAME = 'mineguard-v16';
 const FIREBASE_PROJECT_ID = 'aml-mineguard';
 const FIREBASE_API_KEY = 'AIzaSyCPqKNe7zyTfBqLT6Gh7Cx2-f7jSf1gvTg';
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
@@ -26,6 +26,8 @@ const ASSETS_TO_CACHE = [
   './auth-gate.js',
   './auth-ui.js',
   './org-admin.js',
+  './join-requests.js',
+  './push-client.js',
   './gov-admin.js',
   './offline-store.js',
   './sync-engine.js',

@@ -92,6 +92,9 @@
       '<div class="mg-auth-toggle" id="mgAuthToggle"></div>' +
       '<div class="mg-auth-error" id="mgAuthError"></div>' +
       '<div class="mg-auth-role" id="mgAuthRole" style="display:none;"></div>' +
+      '<div id="mgAuthJoinStatus" style="display:none;font-size:12px;color:#9aa0b4;line-height:1.6;margin:10px 0 0;"></div>' +
+      '<button class="mg-auth-signout" id="mgAuthAdminLink" style="display:none;background:rgba(245,197,24,0.12);color:var(--accent-yellow,#f5c518);border:1.5px solid rgba(245,197,24,0.4);">🛠️ Admin Dashboard</button>' +
+      '<button class="mg-auth-signout" id="mgAuthWorkerLink" style="display:none;background:rgba(46,196,182,0.1);color:#2ec4b6;border:1.5px solid rgba(46,196,182,0.35);">⛏️ Worker Workspace</button>' +
       '<button class="mg-auth-signout" id="mgAuthSignOut" style="display:none;">🚪 ' + esc(tr("authSignOut")) + '</button>' +
       '</div>';
     document.body.appendChild(m);
@@ -107,9 +110,20 @@
       busy = true;
       MG_AUTH.signOut().then(function () {
       busy = false; closeModal(); renderChip();
+      // Clear the workspace preference with the session.
+      try { sessionStorage.removeItem("mg_workspace"); } catch (e) {}
       // Return to the authentication gate; protected state is hidden again.
       if (window.MG_GATE) MG_GATE.showGate();
     });
+    });
+    // Session 21 — workspace switching (UI choice only; never changes roles).
+    el("mgAuthAdminLink").addEventListener("click", function () {
+      try { sessionStorage.setItem("mg_workspace", "admin"); } catch (e) {}
+      window.location.href = "admin.html";
+    });
+    el("mgAuthWorkerLink").addEventListener("click", function () {
+      try { sessionStorage.setItem("mg_workspace", "worker"); } catch (e) {}
+      window.location.href = "index.html";
     });
   }
 
@@ -161,7 +175,17 @@
     if (!(window.MG_GATE && window.MG_AUTH)) return;
     window.MG_GATE.resolveDestination(MG_AUTH).then(function (dest) {
       if (dest === "COMPANY_ADMIN" || dest === "GOVERNMENT_WORKSPACE") {
-        window.location.replace("admin.html");
+        // Session 21 — respect an intentional Worker-Workspace session choice;
+        // the default remains the admin console.
+        var ws = null;
+        try { ws = sessionStorage.getItem("mg_workspace"); } catch (e) {}
+        if (ws === "worker") {
+          if (window.MG_GATE) MG_GATE.hideGate();
+          var app = document.getElementById("app");
+          if (app) app.classList.remove("hidden");
+        } else {
+          window.location.replace("admin.html");
+        }
       } else if (dest === "AUTH_REQUIRED") {
         if (window.MG_GATE) MG_GATE.showGate();
       } else if (dest === "NO_ORGANIZATION" || dest === "SELECT_ORGANIZATION") {
@@ -205,7 +229,13 @@
     var toggle = el("mgAuthToggle");
     var sub = el("mgAuthSub");
     var title = el("mgAuthTitle");
+    var adminLink = el("mgAuthAdminLink");
+    var workerLink = el("mgAuthWorkerLink");
+    var joinStatus = el("mgAuthJoinStatus");
     if (!role || !signOutBtn) return;
+    if (adminLink) adminLink.style.display = "none";
+    if (workerLink) workerLink.style.display = "none";
+    if (joinStatus) { joinStatus.style.display = "none"; joinStatus.textContent = ""; }
     var s = null;
     try { s = JSON.parse(localStorage.getItem("mg_auth_session") || "null"); } catch (e) {}
     if (!s || !s.user) {
@@ -227,8 +257,34 @@
     role.style.display = "block";
     role.textContent = tr("authChecking") + "…";
     MG_AUTH.fetchMyMemberships().then(function (memberships) {
-      if (!memberships.length) { role.textContent = tr("authNoOrg"); return; }
-      var m = memberships[0];
+      var active = (memberships || []).filter(function (m) { return m.status === "active"; });
+      if (!active.length) {
+        role.textContent = tr("authNoOrg");
+        // Session 21 — surface pending join-request outcomes for orgless users.
+        if (joinStatus && MG_AUTH.myJoinRequests) {
+          MG_AUTH.myJoinRequests().then(function (r) {
+            var rows = Array.isArray(r) ? r : (r && r.data) || [];
+            if (!rows.length) return;
+            var last = rows[0];
+            var line = last.status === "pending"
+              ? "⏳ Join request to “" + (last.org_name || "organization") + "” is pending review."
+              : last.status === "approved"
+                ? "✅ Your request to join “" + (last.org_name || "organization") + "” was approved — sign out and back in to refresh access."
+                : "❌ Your request to join “" + (last.org_name || "organization") + "” was not approved.";
+            joinStatus.textContent = line;
+            joinStatus.style.display = "block";
+          }).catch(function () {});
+        }
+        return;
+      }
+      var isAdmin = active.some(function (m) { return m.role === "owner" || m.role === "admin"; });
+      if (isAdmin) {
+        // Admins can use both workspaces; the current page is highlighted away.
+        var onAdminPage = /admin\.html/i.test(window.location.pathname);
+        if (adminLink && !onAdminPage) adminLink.style.display = "block";
+        if (workerLink && onAdminPage) workerLink.style.display = "block";
+      }
+      var m = active[0];
       MG_AUTH.fetchOrganization(m.organization_id).then(function (org) {
         var roleName = {
           owner: tr("authRoleOwner"), admin: tr("authRoleAdmin"),

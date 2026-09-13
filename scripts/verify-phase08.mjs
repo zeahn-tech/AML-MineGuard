@@ -171,8 +171,8 @@ try {
     where t.tgenabled <> 'D' and n.nspname = 'public'
       and t.tgname like 'trg_audit_%';`);
   const trgN = trig.data && trig.data[0] ? Number(trig.data[0].n) : 0;
-  // Phase 05 cutover adds trg_audit_safety_notices + trg_audit_safety_notice_acks (…097) → 23.
-  report(trgN === 23 ? "PASS" : "FAIL", "catalog: 23 audit triggers (14 prior + 5 emergency + government_grants + subscriptions + 2 notices)", `count=${trgN}`);
+  // Phase 05 cutover → 23; session 21 adds trg_audit_organization_join_requests (…110) → 24.
+  report(trgN === 24 ? "PASS" : "FAIL", "catalog: 24 audit triggers (14 prior + 5 emergency + government_grants + subscriptions + 2 notices + join_requests)", `count=${trgN}`);
 
   // =========================================================================
   // INSPECTIONS: INSERT

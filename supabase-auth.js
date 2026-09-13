@@ -378,6 +378,45 @@
     return rpc("site_remove_member", { p_organization_id: orgId, p_site_id: siteId, p_user_id: userId });
   }
 
+  // ---- Session 21: worker join requests + notifications --------------------
+  // The requested role is decided server-side ('worker'); clients only pass
+  // the organization id resolved through organization_search_joinable.
+  function searchJoinableOrgs(query) {
+    return rpc("organization_search_joinable", { p_query: query || null });
+  }
+  function requestJoinOrg(orgId) {
+    return rpc("organization_request_join", { p_organization_id: orgId });
+  }
+  function myJoinRequests() {
+    return rpc("my_join_requests", {});
+  }
+  function listJoinRequests(orgId) {
+    return rpc("organization_join_requests_list", { p_organization_id: orgId });
+  }
+  function reviewJoinRequest(requestId, approve, rejectionReason) {
+    return rpc("organization_review_join_request", {
+      p_request_id: requestId, p_approve: approve === true,
+      p_rejection_reason: rejectionReason || null
+    });
+  }
+  function fetchMyNotifications(unreadOnly) {
+    return rpc("my_notifications", { p_unread_only: unreadOnly === true });
+  }
+  function markNotificationRead(notificationId) {
+    return rpc("mark_notification_read", { p_notification_id: notificationId });
+  }
+
+  // ---- Session 21: push subscription registration (additional channel) ----
+  function registerPushSubscription(endpoint, p256dh, authKey, userAgent) {
+    return rpc("register_push_subscription", {
+      p_endpoint: endpoint, p_p256dh: p256dh, p_auth: authKey,
+      p_user_agent: userAgent || null
+    });
+  }
+  function deregisterPushSubscription(endpoint) {
+    return rpc("deregister_push_subscription", { p_endpoint: endpoint });
+  }
+
   // ---- Phase 04: hierarchy + worker registry -------------------------------
   function orgCreateUnit(orgId, siteId, parentId, unitType, name, code) {
     return rpc("org_create_unit", { p_organization_id: orgId, p_site_id: siteId, p_parent_id: parentId || null, p_unit_type: unitType, p_name: name, p_code: code || null });
@@ -427,6 +466,13 @@
   // admin rights; reads are RLS-bounded by government_grants scope.
   function bootstrapFirstRegulatorAdmin() {
     return rpc("bootstrap_first_regulator_admin", {});
+  }
+
+  // Regulator claim state for the Government panel (session 20). SECURITY
+  // DEFINER TVF; returns [] for members (not eligible) and for signed-out
+  // users. Rows carry { state, organization_id, name, county, org_status }.
+  function regulatorClaimStatus() {
+    return rpc("regulator_claim_status", {});
   }
   function regulatorRevokeGrant(grantId) {
     return rpc("regulator_revoke_grant", { p_grant_id: grantId });
@@ -676,6 +722,15 @@
     orgRevokeInvite: orgRevokeInvite,
     siteAssignMember: siteAssignMember,
     siteRemoveMember: siteRemoveMember,
+    searchJoinableOrgs: searchJoinableOrgs,
+    requestJoinOrg: requestJoinOrg,
+    myJoinRequests: myJoinRequests,
+    listJoinRequests: listJoinRequests,
+    reviewJoinRequest: reviewJoinRequest,
+    fetchMyNotifications: fetchMyNotifications,
+    markNotificationRead: markNotificationRead,
+    registerPushSubscription: registerPushSubscription,
+    deregisterPushSubscription: deregisterPushSubscription,
     orgCreateUnit: orgCreateUnit,
     orgUpdateUnit: orgUpdateUnit,
     orgRemoveUnit: orgRemoveUnit,
@@ -683,6 +738,7 @@
     workerUpdate: workerUpdate,
     workerRemove: workerRemove,
     bootstrapFirstRegulatorAdmin: bootstrapFirstRegulatorAdmin,
+    regulatorClaimStatus: regulatorClaimStatus,
     regulatorIssueGrant: regulatorIssueGrant,
     regulatorRevokeGrant: regulatorRevokeGrant,
     regulatorUpdateUserRole: regulatorUpdateUserRole,
