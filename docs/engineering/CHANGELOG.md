@@ -4,6 +4,25 @@ Format: date · change · docs · status.
 
 ---
 
+## 2026-09-13 (session 21, final pass) — Onboarding deep-links + permission-bundle restoration
+
+- **User-reported:** post-org-creation entry did nothing (1s spinner, then nothing); worker/dashboard
+  unreachable despite account + org existing in Supabase.
+- **Root causes found:** (a) admin.html?onboard=create|join deep links dead-ended for a signed-in
+  orgless user — no restore-branch matched, so a plain sign-in form rendered and ignored input;
+  (b) the earlier …114 permission restore had NOT stuck server-side (bundles = 0 for
+  organizational_units.update) — re-applied live, 5 role bundles restored;
+  (c) a cleanup pass had deleted the real user memberships for the two user-created orgs —
+  ownership restored from the audit trail (owner/active, original timestamps) and re-verified;
+  (d) stale SW cache kept serving pre-fix assets — bumped to v17.
+- admin.html: new showSignedInOnboarding() branch (signed-in + orgless → onboarding options with
+  account email) replaces the dead sign-in-form focus for restore-branch misses and deep links.
+- Verification re-run: phase04 green, org-lifecycle 30/30, worker-join 49/49, push 9/9,
+  auth-gate 21/21, regulator 33/33; security-scan 0 CRITICAL / 19 HIGH (classified);
+  xss-audit clean (9 files). Pending changes ready in the Changes panel.
+
+---
+
 ## 2026-09-13 (session 21) — Worker join requests + admin approval + invitations + notifications/push COMPLETE
 
 - Worker-initiated join requests: opt-in-only discovery TVF (minimum public fields, restrictive

@@ -6,6 +6,16 @@
 | Date | 2026-09-13 |
 | Agent | Buffy (Freebuff/Vly) |
 
+## Session 21 — final remediation pass (same day)
+
+User still could not reach the worker/admin screens after creating an org. Forensics found the
+…114 bundle inserts had not persisted (bundles=0) — re-applied live; the?onboard= deep links
+dead-ended for signed-in orgless users — showSignedInOnboarding() branch added (admin.html);
+SW cache bumped v16→v17 so all fixes actually reach browsers. Also restored the real user's
+owner memberships on their two orgs (T For Trees, Zeahn's Technology) from the audit trail after
+a cleanup pass had removed them. All probes re-verified green (04, org-lifecycle 30/30,
+worker-join 49/49, push 9/9, auth-gate 21/21, regulator 33/33); scans unchanged (0 CRITICAL).
+
 ## Session 21 — what was completed (Worker membership + invitations + notifications/push, COMPLETE)
 
 Context: production directive — workers create an account, request to join an existing
