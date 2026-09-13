@@ -1980,6 +1980,19 @@ function doLogout() {
   if (window.MG_AUTH && MG_AUTH.signOut) MG_AUTH.signOut().catch(function () {});
 }
 
+// Signed-in visitor with NO organization (e.g. arrived from the worker-app
+// gate via admin.html?onboard=create|join, or returned to finish setup): show
+// the onboarding options instead of a dead sign-in form.
+function showSignedInOnboarding() {
+  try {
+    const sess = MG_AUTH.getSession();
+    const email = sess && sess.user && sess.user.email ? sess.user.email : '';
+    showClaimStep('Signed in as ' + (email || 'your account') + ' — choose how to connect to an organization:');
+  } catch (e) {
+    showClaimStep('Your account is not yet connected to an organization.');
+  }
+}
+
 // Silent restore: a valid stored session with admin access skips the login
 // screen (important for offline dashboard use of the PWA).
 (function restoreAdminSession() {
@@ -1999,10 +2012,10 @@ function doLogout() {
           // org context (RLS still scopes every panel read/write server-side).
           MG_AUTH.resolveActiveOrg().then(function (chosen) {
             if (chosen) enterDashboard();
-            else try { document.getElementById('loginUser').focus(); } catch (e) {}
-          }).catch(function () { try { document.getElementById('loginUser').focus(); } catch (e) {} });
+            else showSignedInOnboarding();
+          }).catch(function () { showSignedInOnboarding(); });
         }
-        else try { document.getElementById('loginUser').focus(); } catch (e) {}
+        else showSignedInOnboarding();
       }).catch(function () { try { document.getElementById('loginUser').focus(); } catch (e) {} });
     }).catch(function () {});
   }
