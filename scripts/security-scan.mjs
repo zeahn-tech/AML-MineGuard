@@ -76,7 +76,10 @@ const FIREBASE_LEGACY_FILES = new Set([
 ]);
 
 // Throwaway probe-account passwords (never deployment secrets).
-const PROBE_PASSWORD = /MgProbePass/;
+// Family pattern: all live-probe scripts generate scratch auth users with
+// Mg<Variant>Pass!… constants (MgProbePass!, MgRegPass!, MgJoinPass!,
+// MgPushPass!, …) — scripts/ only, never shipped client code.
+const PROBE_PASSWORD = /Mg[A-Za-z]*Pass!/;
 const PROBE_DIRS = /^scripts\//;
 
 const findings = [];

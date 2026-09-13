@@ -107,6 +107,12 @@
       '  <button class="mg-gate-btn secondary" id="mgGateSignUp">' + esc(tr("authSignUp") || "Create Account") + '</button>' +
       '  <button class="mg-gate-btn ghost" id="mgGateInvite">' + esc(tr("gateAcceptInvite") || "Accept Invitation") + '</button>' +
       '  <button class="mg-gate-btn ghost" id="mgGateForgot" style="margin-top:4px;">' + esc(tr("gateForgot") || "Forgot Password?") + '</button>' +
+      '  <div id="mgGateOnboard" style="display:none;margin-top:14px;">' +
+      '    <div style="font-size:12px;font-weight:700;letter-spacing:1px;color:#f5c518;margin-bottom:8px;">SET YOUR ORGANIZATION</div>' +
+      '    <button class="mg-gate-btn" id="mgGateCreateOrg">\u{1F3D7} Create a New Organization</button>' +
+      '    <button class="mg-gate-btn secondary" id="mgGateJoinOrg">\u{1F465} Join an Existing Organization</button>' +
+      '    <div style="font-size:11px;color:#6d7288;line-height:1.6;margin-top:6px;">Both options open the admin console onboarding — you remain signed in.</div>' +
+      '  </div>' +
       '  <div class="mg-gate-note">Safety reference guides remain available offline.<br>Sign in to report incidents, file JSAs, and receive your organization\u2019s notices.</div>' +
       '  <div class="mg-gate-status" id="mgGateStatus"></div>' +
       '</div>';
@@ -130,8 +136,14 @@
   }
 
   function openAuthModal(mode, note) {
-    var chip = document.getElementById("mgAuthChip");
-    if (chip) chip.click(); // auth-ui opens its modal (handles session state)
+    // Prefer the explicit-mode hook (auth-ui exposes MG_AUTH_UI.open(mode));
+    // fall back to the chip (sign-in) for stale cached auth-ui.js.
+    if (window.MG_AUTH_UI && typeof window.MG_AUTH_UI.open === "function") {
+      window.MG_AUTH_UI.open(mode === "signup" ? "signup" : "signin");
+    } else {
+      var chip = document.getElementById("mgAuthChip");
+      if (chip) chip.click();
+    }
     if (note) showGateMsg(note, "info");
   }
 
@@ -150,17 +162,45 @@
     if (app) app.classList.add("hidden");
     var st = document.getElementById("mgGateStatus");
     if (st) st.textContent = statusText || "";
+    setOnboardActions(false);
+  }
+
+  // Session 21 — NO_ORGANIZATION needs ACTIONABLE onboarding, not just text.
+  // Renders Create / Join buttons (wired to the same surfaces the admin
+  // sign-in screen uses) inside the gate until hidden again.
+  function setOnboardActions(show) {
+    var g = ensureGate();
+    var host = document.getElementById("mgGateOnboard");
+    if (!host) return;
+    host.style.display = show ? "block" : "none";
+    if (!show) return;
+    var createBtn = document.getElementById("mgGateCreateOrg");
+    var joinBtn = document.getElementById("mgGateJoinOrg");
+    if (createBtn && !createBtn.dataset.wired) {
+      createBtn.dataset.wired = "1";
+      createBtn.addEventListener("click", function () {
+        window.location.href = "admin.html?onboard=create";
+      });
+    }
+    if (joinBtn && !joinBtn.dataset.wired) {
+      joinBtn.dataset.wired = "1";
+      joinBtn.addEventListener("click", function () {
+        window.location.href = "admin.html?onboard=join";
+      });
+    }
   }
 
   function hideGate() {
     var g = document.getElementById(GATE_ID);
     if (g) g.classList.add("hidden");
+    setOnboardActions(false);
   }
 
   window.MG_GATE = {
     resolveDestination: resolveDestination,
     showGate: showGate,
     hideGate: hideGate,
-    showGateMsg: showGateMsg
+    showGateMsg: showGateMsg,
+    showGateActions: function () { setOnboardActions(true); }
   };
 })();

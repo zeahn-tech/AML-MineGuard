@@ -197,6 +197,9 @@
               ? (window.t ? t("gateNoOrg") : "No organization has been assigned to your account yet. Ask your administrator for an invitation, or create your own organization.")
               : (window.t ? t("gateSelectOrg") : "You belong to more than one organization. Open the account menu to choose which one to work in."),
             "info");
+          // Session 21 — make onboarding actionable: Create / Join buttons
+          // (the "Set organization" path) instead of text-only guidance.
+          if (dest === "NO_ORGANIZATION" && MG_GATE.showGateActions) MG_GATE.showGateActions();
         }
       } else {
         // WORKER_WORKSPACE: hide the gate, reveal the authenticated shell.
@@ -307,10 +310,12 @@
     });
   }
 
-  function openModal() {
+  function openModal(mode) {
     if (typeof MG_AUTH === "undefined" || !window.MG_CONFIG) { return; }
     if (!el(MODAL_ID)) buildModal();
-    mode = "signin";
+    // Honor the requested mode (signin/signup) — the auth-gate "Create Account"
+    // button must land directly on the sign-UP form, not sign-in + hidden toggle.
+    mode = (mode === "signup") ? "signup" : "signin";
     renderSignedPanel();
     el(MODAL_ID).classList.add("open");
     var email = el("mgAuthEmail");
@@ -337,5 +342,8 @@
     window.addEventListener("storage", function (e) {
       if (e.key === "mg_auth_session") renderChip();
     });
+    // Public hook so the auth-gate (and other surfaces) can open the modal in
+    // an explicit mode instead of simulating a chip click.
+    window.MG_AUTH_UI = { open: openModal, close: closeModal };
   });
 })();

@@ -28,6 +28,30 @@ get notified (in-app + push-ready), and can switch workspaces. Reuse-first foren
   23→24 triggers). security-scan 0 CRITICAL / 16 HIGH baseline; xss-audit clean (9 files).
 - New doc: WORKER_MEMBERSHIP_AND_INVITATION_LIFECYCLE.md (as-built).
 
+## Session 21 (follow-up) — account-creation UX verification + gate onboarding actions
+
+User report: the "Set organization" button was unreachable when creating an account.
+
+**Live verification (REST-level, exact client call chain):** signup (autoconfirm ON → immediate
+session, no email round-trip) → fetchMyMemberships → 0 rows (NO_ORGANIZATION) →
+organization_search_joinable reachable (join flow usable). Account creation itself works
+correctly server-side.
+
+**Root cause of the report:** (1) auth-gate.js "Create Account" button opened the modal in sign-IN
+mode (openAuthModal ignored its mode argument — openModal always reset to signin), so users had to
+discover the hidden toggle link; (2) the NO_ORGANIZATION gate showed guidance TEXT with no action —
+the Create/Join onboarding existed only on the admin sign-in screen (the literal "Set Up
+Organization (Owner)" button no longer exists; it was replaced in session 18 by Create/Claim/Join
+options).
+
+**Fixes (client-only, no schema change):** auth-ui.js openModal(mode) honors the requested mode +
+exposes window.MG_AUTH_UI.open/close; auth-gate.js uses the hook and adds an actionable SET YOUR
+ORGANIZATION section (Create/Join buttons → admin.html?onboard=create|join) shown for
+NO_ORGANIZATION; admin.html showClaimStep deep-links to the requested form. Probes re-run: auth-gate
+21/21, worker-join 49/49, push 9/9, org-lifecycle 30/30, regulator 33/33, phase04 green.
+security-scan 0 CRITICAL (scanner probe-password classification extended to the Mg*Pass! family —
+3 false CRITICALs from new probe scripts eliminated; 19 classified HIGH = documented baseline).
+
 ## Session 21 — standing user actions + next session
 
 - Provision the push **sender** (VAPID keys + delivery worker) when push delivery is wanted — the

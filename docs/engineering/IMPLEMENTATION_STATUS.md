@@ -942,6 +942,14 @@ auth-gate (21/21), worker-join (49/49), push (9/9).
 **Remaining:** push **sender** (VAPID keys + delivery worker) not yet
 provisioned — store/RPCs/client/SW display are ready; rejection reason is
 reviewer-facing only (worker gets a neutral notification, by design);
+**Follow-up (same session) — account-creation UX verification:** live REST replication of the
+new-user chain (signup → immediate session via mailer_autoconfirm → 0 memberships → join TVF
+reachable) proved account creation works server-side. The unreachable "Set organization" control
+was a client gap: the auth-gate Create-Account button opened sign-IN mode (mode argument ignored)
+and the NO_ORGANIZATION gate was text-only. Fixed: auth-ui openModal(mode) + window.MG_AUTH_UI hook;
+auth-gate SET YOUR ORGANIZATION action section (Create/Join → admin.html?onboard=…);
+admin.html deep-link handling. Probes re-run all green (gate 21/21, join 49/49, push 9/9, olc 30/30,
+reg 33/33, 04 green); security-scan back to 0 CRITICAL (probe-password classification family fix).
 standing items unchanged (platform-admin UI console, credential rotation,
 Phase 13 open control rows, CI wiring, Firestore retirement approval).
 

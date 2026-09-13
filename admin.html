@@ -1820,7 +1820,14 @@ function showClaimStep(message) {
   const wrap = document.getElementById('loginClaimWrap');
   if (hint) hint.textContent = message || '';
   if (wrap) wrap.style.display = 'block';
-  showOnboardOptions();
+  // Deep link from the worker-app gate (admin.html?onboard=create|join):
+  // land directly on the requested onboarding form (the Set-organization path).
+  try {
+    const ob = new URLSearchParams(window.location.search).get('onboard');
+    if (ob === 'create') showCreateOrgForm();
+    else if (ob === 'join' && window.MG_JOIN) MG_JOIN.showJoinForm();
+    else showOnboardOptions();
+  } catch (e) { showOnboardOptions(); }
 }
 
 function showOnboardOptions() {
