@@ -151,16 +151,7 @@
     }
     resolveRegulatorContext().then(function (isRegulator) {
       if (!isRegulator) {
-        // not a regulator user: offer one-shot bootstrap for brand-new users
-        root.innerHTML =
-          '<div class="empty-state">' +
-          '<div class="empty-icon">🏛️</div>' +
-          '<div class="empty-text">This panel is for government regulator users.<br>' +
-          'If you are the first government user and belong to no organization yet, you can claim the open regulator organization.</div>' +
-          '<button id="govBootstrapBtn" style="margin-top:12px;background:var(--yellow);color:#111;border:0;border-radius:8px;padding:10px 18px;font-weight:700;cursor:pointer;">Claim Regulator Organization</button>' +
-          '</div>';
-        var btn = el("govBootstrapBtn");
-        if (btn) btn.onclick = onBootstrap;
+        renderClaimSurface();
         return;
       }
       loadGrants().then(function () { return loadGrantScopedData(); }).then(renderPanel);
@@ -171,13 +162,124 @@
     return '<div class="empty-state"><div class="empty-icon">🏛️</div><div class="empty-text">' + esc(msg) + "</div></div>";
   }
 
-  function onBootstrap() {
-    MG_AUTH.bootstrapFirstRegulatorAdmin().then(function (orgId) {
-      statusLine("Regulator organization claimed.");
-      return resolveRegulatorContext().then(function () { return loadGrants(); }).then(renderPanel);
+  // ---------- regulator claim surface (session 20) -------------------------
+  // Not a regulator user. Render the correct claim state from the SERVER
+  // (regulator_claim_status TVF) — never a guaranteed-to-fail button:
+  //   claimable       → confirmation modal → bootstrap_first_regulator_admin
+  //   already_claimed → contact-the-regulator-administrator message
+  //   none_provisioned→ platform-provisioning message
+  //   member of another org → not authorized (no privileged action shown)
+  // Every action result is reported INLINE (govClaimStatus) — the old button
+  // reported into #govStatus, which exists only in the regulator panel, so
+  // both success and failure were invisible (the silent no-op).
+  function renderClaimSurface(presetMsg, presetIsErr) {
+    var root = el("govAdminRoot");
+    if (!root) return;
+    root.innerHTML =
+      '<div class="empty-state">' +
+      '<div class="empty-icon">🏛️</div>' +
+      '<div class="empty-text">Government Regulatory Command Center</div>' +
+      '<div style="font-size:12px;color:var(--text3);margin-top:8px;">Checking regulator organization status…</div>' +
+      '<div id="govClaimStatus" style="margin-top:14px;font-size:13px;font-weight:600;display:none;"></div>' +
+      '<div id="govClaimBody"></div>' +
+      "</div>";
+    if (presetMsg) claimStatusLine(presetMsg, presetIsErr);
+    MG_AUTH.regulatorClaimStatus().then(function (rows) {
+      var s = (rows && rows[0]) || null;
+      var stateName = s ? s.state : (MG_AUTH.getSession() ? "member" : "signed_out");
+      var body = el("govClaimBody");
+      if (stateName === "claimable" && body) {
+        body.innerHTML =
+          '<div style="max-width:520px;margin:0 auto;text-align:left;font-size:13px;color:var(--text2);line-height:1.7;">' +
+          "<p style=\"margin:10px 0;\">The <strong>" + esc(s.name || "regulator organization") +
+          "</strong> organization has been provisioned for the national regulatory authority but has no members yet. As the first government user with no existing organization membership, you may claim it and become its National Regulatory Administrator.</p>" +
+          "<p style=\"margin:10px 0;\">This is a one-time action. It grants administrative access to government regulatory functions. Unauthorized use is audited.</p></div>" +
+          '<button id="govClaimBtn" style="margin-top:10px;background:var(--yellow);color:#111;border:0;border-radius:8px;padding:10px 18px;font-weight:700;cursor:pointer;">🏛️ Claim Regulator Organization</button>';
+        var btn = el("govClaimBtn");
+        if (btn) btn.onclick = function () { onClaim(s); };
+      } else if (stateName === "already_claimed" && body) {
+        body.innerHTML = "<div style='max-width:520px;margin:0 auto;font-size:13px;color:var(--text2);line-height:1.7;'>" +
+          "<p style=\"margin:10px 0;\">The regulator organization <strong>" + esc(s.name || "") + "</strong> has already been claimed.</p>" +
+          "<p style=\"margin:10px 0;\">Please contact its National Regulatory Administrator if you require government access — they can invite you through regulator role management.</p></div>";
+      } else if (stateName === "none_provisioned" && body) {
+        body.innerHTML = "<div style='max-width:520px;margin:0 auto;font-size:13px;color:var(--text2);line-height:1.7;'>" +
+          "<p style=\"margin:10px 0;\">No regulator organization has been provisioned yet.</p>" +
+          "<p style=\"margin:10px 0;\">Government organizations are provisioned by authorized platform administrators — never by self-service. If you represent the national regulatory authority, contact the MineGuard platform administrator.</p></div>";
+      } else if (stateName === "member" && body) {
+        body.innerHTML = "<div style='max-width:520px;margin:0 auto;font-size:13px;color:var(--text2);line-height:1.7;'>" +
+          "<p style=\"margin:10px 0;\">You are not authorized to claim a regulator organization.</p>" +
+          "<p style=\"margin:10px 0;\">Government/regulator access must be provisioned by an authorized administrator. If you require government access, contact the regulator organization\u2019s administrator.</p></div>";
+      }
     }).catch(function (err) {
-      statusLine((err && err.message) || "Bootstrap failed.", true);
+      claimStatusLine(claimFriendlyError(err), true);
     });
+  }
+
+  function claimStatusLine(msg, isErr) {
+    // Inline status for the claim surface (govClaimStatus), independent of
+    // the regulator-panel #govStatus — fixes the silent no-op.
+    var box = el("govClaimStatus");
+    if (box) {
+      box.textContent = msg || "";
+      box.style.display = msg ? "block" : "none";
+      box.style.color = isErr ? "var(--red)" : "var(--green)";
+    }
+  }
+
+  function claimFriendlyError(err) {
+    var raw = String((err && err.message) || err || "");
+    if (raw.indexOf("already holds an active organization membership") >= 0) {
+      return "You already belong to an organization. Regulator claiming is only for users with no existing membership.";
+    }
+    if (raw.indexOf("no claimable regulator organization") >= 0) {
+      return "No regulator organization is currently available for this claim process. It is provisioned by an authorized platform administrator.";
+    }
+    return "We could not complete the regulator organization setup. Please try again or contact the system administrator.";
+  }
+
+  function onClaim(summary) {
+    // Professional confirmation modal (requirement §12): claiming grants
+    // administrative access to government regulatory functions — never on a
+    // single accidental click. The SERVER still decides whether the claim
+    // succeeds; this modal is UX, not authorization.
+    var modal = document.createElement("div");
+    modal.id = "govClaimModal";
+    modal.style.cssText = "position:fixed;inset:0;z-index:9000;background:rgba(10,12,20,0.72);display:flex;align-items:center;justify-content:center;padding:20px;";
+    modal.innerHTML =
+      '<div style="background:var(--bg-card,#1a1d2e);border:1px solid var(--border,rgba(255,255,255,0.12));border-radius:14px;max-width:440px;width:100%;padding:22px;color:var(--text,#e8eaf0);font-size:14px;line-height:1.6;">' +
+      '<div style="font-weight:800;font-size:17px;margin-bottom:10px;">🏛️ Claim Regulator Organization</div>' +
+      "<p style=\"margin:8px 0;\">You are about to claim the designated regulator organization for your authorized MineGuard account.</p>" +
+      "<p style=\"margin:8px 0;\">This action may grant administrative access to government/regulatory functions.</p>" +
+      '<div style="margin:12px 0;padding:10px;border-radius:8px;background:rgba(245,197,24,0.08);border:1px solid rgba(245,197,24,0.25);">' +
+      "<div style=\"font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;\">Organization</div>" +
+      "<div style=\"font-weight:700;color:var(--yellow);\">" + esc((summary && summary.name) || "Regulator Organization") + "</div>" +
+      ((summary && summary.county) ? "<div style=\"font-size:12px;color:var(--text2);\">" + esc(summary.county) + "</div>" : "") +
+      "</div>" +
+      '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">' +
+      '<button id="govClaimCancel" style="background:transparent;color:var(--text2);border:1px solid var(--border,rgba(255,255,255,0.2));border-radius:8px;padding:9px 16px;font-weight:600;cursor:pointer;">Cancel</button>' +
+      '<button id="govClaimConfirm" style="background:var(--yellow);color:#111;border:0;border-radius:8px;padding:9px 16px;font-weight:800;cursor:pointer;">Confirm Claim</button>' +
+      "</div></div>";
+    document.body.appendChild(modal);
+    el("govClaimCancel").onclick = function () { modal.remove(); };
+    modal.addEventListener("click", function (e) { if (e.target === modal) modal.remove(); });
+    el("govClaimConfirm").onclick = function () {
+      var confirmBtn = el("govClaimConfirm");
+      var cancelBtn = el("govClaimCancel");
+      if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = "⏳ Claiming…"; }
+      if (cancelBtn) cancelBtn.disabled = true;
+      MG_AUTH.bootstrapFirstRegulatorAdmin().then(function () {
+        modal.remove();
+        claimStatusLine("Regulator organization claimed successfully. You are now its National Regulatory Administrator.", false);
+        // Re-resolve → the user is now a regulator member → full panel.
+        return resolveRegulatorContext().then(function (isRegulator) {
+          if (isRegulator) return loadGrants().then(loadGrantScopedData).then(renderPanel);
+          renderClaimSurface("Claim recorded, but the panel could not be loaded. Please reopen the Government tab.", true);
+        });
+      }).catch(function (err) {
+        modal.remove();
+        claimStatusLine(claimFriendlyError(err), true);
+      });
+    };
   }
 
   function grantRowHtml(g) {

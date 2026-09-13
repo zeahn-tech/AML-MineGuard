@@ -2,9 +2,64 @@
 
 | Field | Value |
 |---|---|
-| Session | 18 — Organization lifecycle + authentication remediation COMPLETE (create_organization + org_transfer_ownership RPCs applied live; onboarding UI create/claim/join; selected-org model + switcher; verify-org-lifecycle 30/30 PASS; full regression all-PASS). Prior: 17 — Phase 05 cutover COMPLETE (fresh-start, ADR-014): owner waived the Firestore import; migrations `…097` (safety_notices + acks) + `…098` (soft-delete RPC) applied live; `notices.js` cut over to PostgREST for signed-in users (Firestore = fallback-only); `verify-phase05.mjs` 42/42 PASS self-cleaning; full probe suite (04/05/06/06c/07/08/09/10/11/12/13) all-PASS after audit-trigger-count expectations updated 21→23; **rotations from the session-16 incident still REQUIRED** |
-| Date | 2026-09-10 |
+| Session | 21 — Worker join requests + admin approval + notifications/push COMPLETE (join-requests.js; migrations …110–…114 applied live; verify-worker-join 49/49 + verify-push-foundation 9/9 PASS self-cleaning; full regression all-PASS). Prior: 20 — Regulator organization claim + provisioning COMPLETE (…100–…102; verify-regulator-lifecycle 33/33). Prior: 18 — Organization lifecycle + authentication remediation COMPLETE (create_organization + org_transfer_ownership RPCs applied live; onboarding UI create/claim/join; selected-org model + switcher; verify-org-lifecycle 30/30 PASS; full regression all-PASS). Prior: 17 — Phase 05 cutover COMPLETE (fresh-start, ADR-014): owner waived the Firestore import; migrations `…097` (safety_notices + acks) + `…098` (soft-delete RPC) applied live; `notices.js` cut over to PostgREST for signed-in users (Firestore = fallback-only); `verify-phase05.mjs` 42/42 PASS self-cleaning; full probe suite (04/05/06/06c/07/08/09/10/11/12/13) all-PASS after audit-trigger-count expectations updated 21→23; **rotations from the session-16 incident still REQUIRED** |
+| Date | 2026-09-13 |
 | Agent | Buffy (Freebuff/Vly) |
+
+## Session 21 — what was completed (Worker membership + invitations + notifications/push, COMPLETE)
+
+Context: production directive — workers create an account, request to join an existing
+organization, and get worker-only access until an admin approves; admins review/approve/reject,
+get notified (in-app + push-ready), and can switch workspaces. Reuse-first forensic audit done first.
+
+- **Reused (no parallel systems):** Phase 04 invitations (org_invites tokens), organization_members +
+  require_org_admin, Phase 03 RBAC, Phase 06 audit triggers, auth-gate workspace resolution +
+  showWorkerRefusal, org settings jsonb.
+- **Migrations …110–…114 applied live (HTTP 201):** join-request table + server-set roles + RPCs
+  (request/review race-safe), notifications store, opt-in-only discovery TVF, audit-capture cases,
+  **security fix …112** (list TVF require_org_admin gate — was client-gated only), push foundation
+  …113 (push_subscriptions: hashed endpoints, RPC-only, own-row RLS), …114 restores Phase 04
+  organizational_units.* permission rows lost in the catalog wipe (probe-caught regression).
+- **Client:** join-requests.js (onboarding join UX + admin review card + notification bell + opt-in
+  toggle), admin.html onboarding options incl. Join, app.js push (de)registration via push-client.js
+  (graceful no-op until VAPID), supabase-auth.js wrappers, sw.js v16.
+- **Probes:** verify-worker-join 49/49 + verify-push-foundation 9/9 PASS self-cleaning; wired into
+  run-all-probes (join, push). Full regression all-PASS (04 fixed by …114; 07/08/09 catalog counts
+  23→24 triggers). security-scan 0 CRITICAL / 16 HIGH baseline; xss-audit clean (9 files).
+- New doc: WORKER_MEMBERSHIP_AND_INVITATION_LIFECYCLE.md (as-built).
+
+## Session 21 (follow-up) — account-creation UX verification + gate onboarding actions
+
+User report: the "Set organization" button was unreachable when creating an account.
+
+**Live verification (REST-level, exact client call chain):** signup (autoconfirm ON → immediate
+session, no email round-trip) → fetchMyMemberships → 0 rows (NO_ORGANIZATION) →
+organization_search_joinable reachable (join flow usable). Account creation itself works
+correctly server-side.
+
+**Root cause of the report:** (1) auth-gate.js "Create Account" button opened the modal in sign-IN
+mode (openAuthModal ignored its mode argument — openModal always reset to signin), so users had to
+discover the hidden toggle link; (2) the NO_ORGANIZATION gate showed guidance TEXT with no action —
+the Create/Join onboarding existed only on the admin sign-in screen (the literal "Set Up
+Organization (Owner)" button no longer exists; it was replaced in session 18 by Create/Claim/Join
+options).
+
+**Fixes (client-only, no schema change):** auth-ui.js openModal(mode) honors the requested mode +
+exposes window.MG_AUTH_UI.open/close; auth-gate.js uses the hook and adds an actionable SET YOUR
+ORGANIZATION section (Create/Join buttons → admin.html?onboard=create|join) shown for
+NO_ORGANIZATION; admin.html showClaimStep deep-links to the requested form. Probes re-run: auth-gate
+21/21, worker-join 49/49, push 9/9, org-lifecycle 30/30, regulator 33/33, phase04 green.
+security-scan 0 CRITICAL (scanner probe-password classification extended to the Mg*Pass! family —
+3 false CRITICALs from new probe scripts eliminated; 19 classified HIGH = documented baseline).
+
+## Session 21 — standing user actions + next session
+
+- Provision the push **sender** (VAPID keys + delivery worker) when push delivery is wanted — the
+  store/RPCs/client/SW display are ready; in-app notifications remain authoritative.
+- STILL OPEN from session 16: rotate service-role key + DB password (SECURITY_CERTIFICATION §2).
+- Phase 13 open control rows unchanged (rate limiting, MFA, media re-encode, DR drill).
+- Full Firestore retirement still requires explicit owner approval (ADR-014); platform-admin UI
+  console still RPC-level (Phase 12 limitation); CI wiring for probes still open.
 
 ## Session 18 — what was completed (Organization lifecycle + authentication remediation, COMPLETE)
 
@@ -826,3 +881,18 @@ credential rotation (session-16 incident), Phase 13 open control rows
 (rate limiting, MFA, media re-encode, DR drill), CI wiring, Firestore
 retirement approval.
 
+
+## Session 20 (2026-09-12) — Regulator organization claim + provisioning
+
+**Completed:** regulator lifecycle remediation — provision RPC (platform-admin
+only) + claim-status TVF + one-shot claim UX with visible outcomes; RBAC catalog
+reseeded live (…102) after discovering it was empty; organization_members_role_check
+extended to platform roles (…101). verify-regulator-lifecycle.mjs 33/33 PASS
+(self-cleaning), wired into run-all-probes. verify-phase11 fixtures de-seeded
+(48/48). Full regression green; security-scan 0 CRITICAL; xss-audit clean.
+New doc: REGULATOR_ORGANIZATION_LIFECYCLE.md.
+
+**Next-session actions:** none required for the regulator lifecycle itself; standing
+items — platform-admin UI console (RPC-level provisioning today), credential
+rotation (session-16 incident), Phase 13 open control rows (rate limiting, MFA,
+media re-encode, DR drill), CI wiring, Firestore retirement approval.

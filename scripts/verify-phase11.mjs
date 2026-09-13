@@ -57,8 +57,11 @@ function record(name, ok, detail = "") {
 
 const PASSWORD = "MgProbePass!2026";
 const stamp = Date.now().toString(36);
-const ORG_A_SLUG = "arcelormittal-liberia";
-const ORG_B_SLUG = "liberia-regulator";
+// NOTE: earlier revisions of this probe read the seeded AML tenant
+// (slug 'arcelormittal-liberia') and the seeded regulator placeholder
+// (slug 'liberia-regulator') as shared fixtures. The 2026-09-10 fresh-start
+// cutover (ADR-014) removed shared seed rows from the live project, so all
+// fixtures are now probe-created and self-cleaning (see scaffold/cleanup).
 const EMAILS = {
   regAdmin: `mg.p11.regadmin.${stamp}@gmailtest.com`,
   inspector: `mg.p11.inspector.${stamp}@gmailtest.com`,
@@ -67,6 +70,7 @@ const EMAILS = {
 };
 const ORG_A_REG_SLUG = `p11-reg-${stamp}`;
 const ORG_A_TARGET_SLUG = `p11-target-${stamp}`;
+const ORG_A_OTHER_SLUG = `p11-other-${stamp}`;
 
 // ---- Management API SQL (privileged, no service-role JWT needed) ----------
 async function sql(query) {
@@ -159,8 +163,8 @@ async function cleanup() {
     // placeholder: onboarding() re-points scratchRegOrgId at the bootstrap-claimed
     // seeded org, and deleting it here is what wiped 'liberia-regulator' during
     // the 2026-09-09 session. Only genuinely-scratch orgs are deleted.
-    for (const orgId of [state.scratchRegOrgId, state.scaffoldRegOrgId, state.scratchTargetOrgId]) {
-      if (orgId && orgId !== state.seededRegOrgId && orgId !== state.orgAId && orgId !== state.orgBId) {
+    for (const orgId of [state.scratchRegOrgId, state.scaffoldRegOrgId, state.scratchTargetOrgId, state.orgAId]) {
+      if (orgId && orgId !== state.seededRegOrgId) {
         await sql(`delete from public.organization_members where organization_id = '${orgId}'`);
         await sql(`delete from public.sites where organization_id = '${orgId}'`);
         await sql(`delete from public.organizations where id = '${orgId}'`);
@@ -192,20 +196,14 @@ async function cleanup() {
 
 // ---- scaffold --------------------------------------------------------------
 async function scaffold() {
-  // AML tenant
-  const a = await sql(`select id from public.organizations where slug = '${ORG_A_SLUG}' limit 1`);
-  state.orgAId = a.data?.[0]?.id;
-  if (!state.orgAId) throw new Error("AML tenant org not found");
-
-  const sites = await sql(`select id, name from public.sites where organization_id = '${state.orgAId}' order by name`);
-  const siteRows = sites.data || [];
-  if (siteRows.length < 2) throw new Error("AML needs >= 2 seeded sites for the scope matrix");
-  state.siteA1 = siteRows[0].id;
-  state.siteA2 = siteRows[1].id;
-
-  // seeded regulator placeholder org (must NOT be grantable as target)
-  const b = await sql(`select id from public.organizations where slug = '${ORG_B_SLUG}' limit 1`);
-  state.orgBId = b.data?.[0]?.id;
+  // "Other org" for negative checks (no grant → invisible). Previously this
+  // was the seeded AML tenant, but the 2026-09-10 fresh-start cutover (ADR-014)
+  // removed shared seed rows from the live project — probes must scaffold
+  // their own fixtures. Self-cleaning via cleanup(), like every other fixture.
+  const other = await sql(`insert into public.organizations (name, slug, org_type, status, county)
+    values ('P11 Probe Other Org', '${ORG_A_OTHER_SLUG}', 'mining_company', 'active', 'Bong') returning id`);
+  state.orgAId = other.data?.[0]?.id;
+  if (!state.orgAId) throw new Error("scratch other-org create failed: " + JSON.stringify(other.data).slice(0, 400));
 
   // probe users
   for (const email of Object.values(EMAILS)) {
@@ -234,10 +232,10 @@ async function scaffold() {
   // memberships
   await sql(`insert into public.organization_members (organization_id, user_id, role, status, created_by)
     values ('${state.scratchTargetOrgId}', '${state.users[EMAILS.targetOwner].userId}', 'owner', 'active', '${state.users[EMAILS.targetOwner].userId}')`);
-  // inspector membership must live in the org the fresh user actually claimed
-  await sql(`insert into public.organization_members (organization_id, user_id, role, status, created_by)
-    values ('${state.scratchRegOrgId}', '${state.users[EMAILS.inspector].userId}', 'government_safety_inspector', 'active', '${state.users[EMAILS.inspector].userId}')
-    on conflict do nothing`);
+  // NOTE: the scratch regulator org must stay MEMBERLESS here — bootstrap
+  // claims the first memberless regulator org by created_at, which (since the
+  // seeded placeholder is gone) is this org. onboarding() adds the inspector
+  // to whichever org bootstrap actually claims.
 
   // safety-domain rows in the scratch target org (granted scope)
   const inc = await sql(`insert into public.incidents
@@ -408,7 +406,7 @@ async function grantLifecycle() {
     g1bid === g1id ? "same grant id" : `got ${g1bid} vs ${g1id}`);
 
   // cross-checks
-  const gx = await rpc("regulator_issue_grant", { p_target_org_id: state.orgBId }, regAdmin.token);
+  const gx = await rpc("regulator_issue_grant", { p_target_org_id: state.scratchRegOrgId }, regAdmin.token);
   record("grants: grant targeting a regulator org denied", gx.status !== 200);
 
   const gy = await rpc("regulator_issue_grant", {

@@ -806,6 +806,153 @@ garbage token 401.
 (standard GoTrue JWT semantics, 1h expiry). Full auth-gate doc:
 `AUTHENTICATION_GATE_AND_ENTRY_ROUTING.md`.
 
+## Session 20 (2026-09-12) — Regulator organization claim + provisioning — COMPLETE (live-verified)
+
+**Trigger:** the "Claim Regulator Organization" action produced no visible result.
+
+**Root cause (forensic):** the bootstrap view reported outcomes via `statusLine()` →
+`el("govStatus")`, an element that only exists in the regulator command-center
+`renderPanel()` — every result (success or failure) was invisible. Server-side the
+Phase 11 RPC (`bootstrap_first_regulator_admin`, …090/…091) worked but had no
+claimable orgs and no surfaced errors. Additionally discovered: the RBAC catalog
+(`roles`/`permissions`/`role_permissions`/`plans`) was **empty on the live project**
+(schema intact, rows gone), silently breaking all permission-gated surfaces incl.
+the provision authorization path.
+
+**Migrations (all applied live, HTTP 201):**
+- `20260903000100_regulator_lifecycle.sql` — `provision_regulator_organization(p_name,
+  p_county)` SECURITY DEFINER (platform-org membership + platform-scope role required;
+  actor = `auth.uid()`; org_type/status server-set; atomic; single-active-regulator
+  uniqueness) + `regulator_claim_status()` TVF (none_provisioned/claimable/already_claimed).
+- `20260903000101_regulator_lifecycle_platform_roles.sql` — extended
+`organization_members_role_check` with the 3 platform role codes (fixes latent 23514
+in `bootstrap_first_platform_admin` and unblocks provision authorization).
+- `20260903000102_reseed_catalog.sql` — restored the catalog rows verbatim from the
+authoritative seeds (…030 + …073 + …094): 16 roles / 62 permissions / 428 bundles /
+3 plans. Fidelity tool `scripts/check-reseed-fidelity.mjs` PASS before apply.
+
+**Client:**
+- `gov-admin.js` — claim surface now resolves state from `regulator_claim_status()`
+before offering the button; confirmation modal; loading state; inline success /
+already-claimed / not-authorized / no-eligible-org / session-expired / error
+messages (silent no-op eliminated; raw internals never shown).
+- `supabase-auth.js` — `regulatorClaimStatus()` wrapper.
+- `org-admin.js` — regulator orgs render as Government Regulator with
+regulator-appropriate actions (no commercial-only actions).
+- `sw.js` — cache version bumped.
+
+**Tests:** NEW `scripts/verify-regulator-lifecycle.mjs` **33/33 PASS, self-cleaning**
+(provisioning authz + denials; duplicate prevention; empty-org onboarding; one-shot
+claim with server-set role; member-caller denial; suspension blocking; forged
+membership INSERT 403; forged args to 0-arg RPC rejected; audit
+organizations.insert + organization_members.insert; 0 cross-tenant rows without a
+grant). Wired into `run-all-probes.mjs` as `reg`. Full regression all-PASS: 04, 06,
+06-cascade, 07, 08, 09, 10, 11 (**48/48 after de-seeding its shared-fixture
+dependencies — probes now scaffold self-cleaning fixtures**, consistent with the
+ADR-014 fresh-start), 12 (31/31), 13 (27/27), org-lifecycle (30/30), auth-gate
+(21/21). `security-scan` 0 CRITICAL / 16 classified HIGH (baseline restored after
+removing a stray throwaway diag script); `xss-audit` clean.
+
+**Docs:** REGULATOR_ORGANIZATION_LIFECYCLE.md (new, as-built).
+
+**Remaining:** platform-admin UI console (provisioning currently RPC-level, per
+Phase 12 limitation); standing items unchanged (credential rotation, Phase 13 open
+control rows, CI wiring, Firestore retirement approval).
+
+## Session 21 (2026-09-13) — Worker join requests + admin approval + invitations + notifications/push — COMPLETE (live-verified)
+
+**Trigger:** production directive: workers must be able to create an account,
+request to join an existing organization, and gain only worker access until an
+admin approves; admins must be able to review/approve/reject, receive
+notifications, and switch workspaces. Reuse of the existing
+membership/invitation/RBAC/RLS/audit architecture was mandatory.
+
+**What already existed (reused, not duplicated):** Phase 04 invitations
+(`org_invites`, 64-char token, email-matched single-use), `organization_members`
+rows + `require_org_admin`, Phase 03 RBAC catalog, Phase 06 append-only audit
+triggers, workspace resolution (`auth-gate.js`) + `showWorkerRefusal` UI guard,
+org settings jsonb.
+
+**Migrations (all applied live, HTTP 201):**
+- `…00110_worker_join_requests.sql` — `organization_join_requests`
+  (requested_role SERVER-SET worker/contractor; unique (org,user);
+  RLS: requester-own + org-admin SELECT, writes RPC-only default-deny);
+  `organization_search_joinable` (minimum public fields, opt-in-only discovery,
+  restrictive default); `organization_request_join` (auth.uid-derived,
+  duplicate/member/opt-in guards, admin notifications); `organization_review_join_request`
+  (require_org_admin; FOR UPDATE + status re-check → race-safe; approval upserts
+  ACTIVE worker membership; rejection records reviewer+reason, no membership;
+  both outcomes notify the requester); `notifications` store (own-row RLS,
+  server-written) + `my_notifications`/`mark_notification_read`;
+  `organization_join_requests_list`/`my_join_requests`.
+- `…00111_join_request_audit_cases.sql` — audit-capture cases for the two new
+  tables (…090 republish verbatim + 2 cases; fidelity-checked).
+- `…00112_join_requests_list_authz.sql` — **security fix:** the …110 list TVF
+  was SECURITY DEFINER with no internal check (client-gated only) → added an
+  explicit `require_org_admin` gate (cross-tenant enumeration denied server-side).
+- `…00113_push_subscriptions.sql` — push foundation: `push_subscriptions`
+  (endpoint SHA-256-hashed, RFC 8291 keys server-side only, unique
+  (user,endpoint_hash), own-row RLS, RPC-only writes) +
+  `register/deregister_push_subscription` (auth.uid-derived).
+- `…00114_restore_phase04_permissions.sql` — probe-caught regression: Phase 04s
+  `organizational_units.*` permission rows were lost with the pre-session catalog
+  wipe and not part of the …102 reseed block → restored verbatim from …040.
+
+**Client:**
+- `join-requests.js` (NEW) — onboarding Join-an-Existing-Organization search +
+  request UX; admin notification bell (unread badge, 60s poll) + panel;
+  admin review card (approve/reject with loading states, confirmation,
+  explicit success/failure — no silent no-op); org opt-in toggle.
+- `admin.html` — onboarding options (Create / Claim / Join / Invite) with
+  mutually exclusive forms; `join-requests.js` + `push-client.js` included.
+- `index.html` — same includes for the worker app; gate NO_ORGANIZATION
+  guidance now points at the join path (`lang.js` EN/FR updated).
+- `app.js` — enable/disable notifications now (de)register Web Push via
+  `push-client.js` (graceful no-op without VAPID key; never blocks flows).
+- `supabase-auth.js` — wrappers: searchJoinableOrgs, requestJoinOrg,
+  myJoinRequests, listJoinRequests, reviewJoinRequest, fetchMyNotifications,
+  markNotificationRead, registerPushSubscription, deregisterPushSubscription.
+- `sw.js` — `push-client.js` precached; cache v16.
+
+**Tests:** NEW `scripts/verify-worker-join.mjs` **49/49 PASS, self-cleaning**
+(discovery minimum-fields/opt-in/anonymous-denied; request submission +
+duplicate/member/opt-in denials; forged role 404/400; direct-INSERT 403;
+pending ≠ membership (0 incidents/org rows); admin notification; self-approval
+denied; approval → ACTIVE worker membership; second-approval race denial;
+own-only notification reads + cross-user mark-read no-op; worker cannot call
+org_add_member / org_update_member_role; cross-tenant roster 0 rows + own-org
+roster visible (Phase 00 foundation RLS, org-scoping verified); rejection with
+reviewer+reason and NO membership; re-apply after rejection; role change
+worker→admin→worker with revalidation; invitation token + accept + reuse
+denied; audit coverage; cleanup verified). NEW `scripts/verify-push-foundation.mjs`
+**9/9 PASS, self-cleaning** (anonymous denied; register/refresh; forged user_id
+rejected; cross-user reads denied; direct INSERT denied; deregister own only).
+Both wired into `run-all-probes.mjs` (`join`, `push`).
+
+**Regression:** full suite re-run — 04 (fixed by …114), 05 (42/42), 06,
+06-cascade, 07/08/09 (catalog counts updated 23 → 24 audit triggers for the new
+join_requests trigger; notifications deliberately not trigger-audited), 10, 11
+(48/48), 12 (31/31), 13 (27/27), org-lifecycle (30/30), regulator (green),
+auth-gate (21/21), worker-join (49/49), push (9/9).
+`security-scan` 0 CRITICAL / 16 HIGH (documented classified baseline);
+`xss-audit` clean (9 files incl. join-requests.js).
+
+**Docs:** WORKER_MEMBERSHIP_AND_INVITATION_LIFECYCLE.md (new, as-built).
+
+**Remaining:** push **sender** (VAPID keys + delivery worker) not yet
+provisioned — store/RPCs/client/SW display are ready; rejection reason is
+reviewer-facing only (worker gets a neutral notification, by design);
+**Follow-up (same session) — account-creation UX verification:** live REST replication of the
+new-user chain (signup → immediate session via mailer_autoconfirm → 0 memberships → join TVF
+reachable) proved account creation works server-side. The unreachable "Set organization" control
+was a client gap: the auth-gate Create-Account button opened sign-IN mode (mode argument ignored)
+and the NO_ORGANIZATION gate was text-only. Fixed: auth-ui openModal(mode) + window.MG_AUTH_UI hook;
+auth-gate SET YOUR ORGANIZATION action section (Create/Join → admin.html?onboard=…);
+admin.html deep-link handling. Probes re-run all green (gate 21/21, join 49/49, push 9/9, olc 30/30,
+reg 33/33, 04 green); security-scan back to 0 CRITICAL (probe-password classification family fix).
+standing items unchanged (platform-admin UI console, credential rotation,
+Phase 13 open control rows, CI wiring, Firestore retirement approval).
+
 ## Feature inventory (baseline, audited)
 
 | Capability (must preserve) | Where | Functional today | Tenant-aware today |

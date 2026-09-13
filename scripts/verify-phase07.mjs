@@ -212,8 +212,11 @@ try {
       and t.tgname like 'trg_audit_%';`);
   const trgN = trig.data && trig.data[0] ? Number(trig.data[0].n) : 0;
   // Phase 11 adds trg_audit_government_grants (…090) → 21; Phase 05 cutover
-  // adds trg_audit_safety_notices + trg_audit_safety_notice_acks (…097) → 23.
-  report(trgN === 23 ? "PASS" : "FAIL", "catalog: 23 audit triggers (7 tenant + 3 incident + 2 JSA + inspections + CAPA + 5 emergency + government_grants + subscriptions + 2 notices)", `count=${trgN}`);
+  // adds trg_audit_safety_notices + trg_audit_safety_notice_acks (…097) → 23;
+  // session 21 adds trg_audit_organization_join_requests (…110) → 24.
+  // (notifications are deliberately NOT trigger-audited: delivery artifacts;
+  // lifecycle events are captured on join_requests/membership rows.)
+  report(trgN === 24 ? "PASS" : "FAIL", "catalog: 24 audit triggers (7 tenant + 3 incident + 2 JSA + inspections + CAPA + 5 emergency + government_grants + subscriptions + 2 notices + join_requests)", `count=${trgN}`);
 
   const bucket = await sql(`select id, public from storage.buckets where id = 'incident-evidence';`);
   const b = bucket.data && bucket.data[0] ? bucket.data[0] : null;

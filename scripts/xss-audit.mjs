@@ -34,6 +34,7 @@ const AUDIT_FILES = [
   "auth-ui.js",
   "notices.js",
   "firebase.js",
+  "join-requests.js",
 ];
 
 // HTML sinks whose string argument is executed as markup.

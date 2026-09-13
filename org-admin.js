@@ -168,12 +168,54 @@
     });
   }
 
+  var GOV_ROLE_CODES = ["national_regulatory_admin", "government_safety_inspector",
+    "government_compliance_officer", "government_analyst"];
+  var GOV_ROLE_NAMES = {
+    national_regulatory_admin: "National Regulatory Administrator",
+    government_safety_inspector: "Government Safety Inspector",
+    government_compliance_officer: "Government Compliance Officer",
+    government_analyst: "Government Analyst"
+  };
+
+  var ORG_TYPE_NAMES = {
+    mining_company: "Mining Company",
+    contractor: "Contractor",
+    service_provider: "Service Provider",
+    regulator: "Government Regulator",
+    platform: "Platform Administration"
+  };
+
+  function isRegulatorOrgFor(orgId) {
+    var m = (state.myMemberships || []).find(function (x) { return x.organization_id === orgId; });
+    var o = m && m._org;
+    return !!(o && o.org_type === "regulator") || ((state.org && state.org.id === orgId && state.org.org_type === "regulator"));
+  }
+
   function buildHtml() {
     var org = state.org || {};
+    var isRegulatorOrg = org.org_type === "regulator";
+    var isPlatformOrg = org.org_type === "platform";
     var h = [];
     h.push('<div class="section-hdr"><h3>🏢 ' + esc(org.name || "Organization") + '</h3><span style="font-size:12px;color:var(--text2);">' +
-      esc(org.org_type || "") + (org.county ? " · " + esc(org.county) : "") + '</span></div>');
+      esc(ORG_TYPE_NAMES[org.org_type] || org.org_type || "") + (org.county ? " · " + esc(org.county) : "") + '</span></div>');
     h.push('<div id="orgAdminStatus" style="display:none;margin-bottom:12px;font-size:13px;font-weight:600;"></div>');
+
+    // --- Regulator/platform state banner (session 20) ---
+    // A government regulator tenant is NOT a commercial tenant: no sites, no
+    // plan/subscription, no commercial onboarding. Its oversight reach is
+    // grant-based (Government tab), never org membership.
+    if (isRegulatorOrg) {
+      h.push('<div class="card-block" style="margin-bottom:20px;border-color:rgba(59,110,165,0.45);background:rgba(59,110,165,0.07);">');
+      h.push('<div class="settings-group-title">🏛️ Government Regulator Organization</div>');
+      h.push('<div style="font-size:13px;color:var(--text2);line-height:1.7;margin:8px 0;">This is a government organization. Regulatory oversight of mining companies is managed through <strong>government grants</strong> on the Government tab — the regulator is never made an owner or member of a mining company, and holds no commercial plan.</div>');
+      h.push('<div style="font-size:12px;color:var(--text3);">Type: Government Regulator · Status: ' + esc(org.status || "active") + ' · Oversight access: grant-based (explicit authorization required)</div>');
+      h.push('</div>');
+    } else if (isPlatformOrg) {
+      h.push('<div class="card-block" style="margin-bottom:20px;border-color:rgba(245,197,24,0.4);background:rgba(245,197,24,0.06);">');
+      h.push('<div class="settings-group-title">🛡️ Platform Administration</div>');
+      h.push('<div style="font-size:13px;color:var(--text2);line-height:1.7;margin:8px 0;">This is a platform administration organization. Provisioning of regulator organizations and platform operations are performed from authorized platform surfaces.</div>');
+      h.push('</div>');
+    }
 
     // --- Organization switcher (users with multiple active memberships) ---
     if ((state.myMemberships || []).length > 1) {
@@ -190,7 +232,8 @@
     }
 
     // --- First-site onboarding (organization lifecycle, session 18) ---
-    if (!state.sites || !state.sites.length) {
+    // Commercial organizations only — regulator/platform orgs have no sites.
+    if (!isRegulatorOrg && !isPlatformOrg && !state.sites.length) {
       h.push('<div class="card-block" style="margin-bottom:20px;border-color:rgba(46,196,182,0.4);background:rgba(46,196,182,0.06);">');
       h.push('<div class="settings-group-title">🚀 Add your first mining site</div>');
       h.push('<div style="font-size:13px;color:var(--text2);margin:8px 0;">Your organization is ready. Sites are where incidents, JSAs and inspections live — add your first one to get started.</div>');
@@ -207,6 +250,8 @@
     }
 
     // --- Plan & settings (Phase 12: SaaS + enterprise administration) ---
+    // Regulator orgs are not commercial tenants: no plan block at all.
+    if (!isRegulatorOrg) {
     h.push('<div class="card-block" style="margin-bottom:20px;">');
     h.push('<div class="settings-group-title">⚙️ Plan &amp; Organization Settings</div>');
     var sub = state.subscription;
@@ -238,24 +283,33 @@
       h.push('<div style="display:flex;gap:10px;flex-wrap:wrap;margin:6px 0;align-items:flex-end;">');
       h.push('<div><label class="nc-form-label" style="font-size:10px;">Display name</label><input id="os-name" class="nc-form-input" style="width:180px;" value="' + esc(br.name || org.name || "") + '" /></div>');
       h.push('<div><label class="nc-form-label" style="font-size:10px;">Brand color</label><input id="os-color" type="color" class="nc-form-input" style="width:52px;padding:2px;" value="' + esc(br.primary_color || "#f5c518") + '" /></div>');
+      h.push('<div id="mgJoinOptInHost" style="margin:8px 0;"></div>');
       h.push('<button class="filter-btn" id="os-save" style="background:rgba(46,196,182,0.12);color:var(--green);border-color:rgba(46,196,182,0.35);">Save Settings</button>');
       h.push('</div>');
     } else if (!state.canManageBilling) {
       h.push('<div style="font-size:12px;color:var(--text3);">Plan and settings changes require Owner or Administrator permissions.</div>');
     }
     h.push('</div>');
+    } // end non-regulator plan block
 
     // --- People & access ---
     h.push('<div class="card-block" style="margin-bottom:20px;">');
     h.push('<div class="settings-group-title">👥 Members &amp; Access</div>');
+    // Session 21 — worker join requests review card (own module renders it).
+    if (!isRegulatorOrg && !isPlatformOrg && state.canManagePeople) {
+      h.push('<div id="mgJoinAdminCard"></div>');
+    }
     if (state.canManagePeople) {
       h.push('<div style="display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 16px;">');
       h.push('<input type="email" id="oi-email" class="nc-form-input" style="flex:1;min-width:180px;" placeholder="person@company.com" />');
-      h.push('<select id="oi-role" class="nc-form-select">' + ROLE_CODES.map(function (c) {
-        return '<option value="' + c + '">' + ROLE_NAMES[c] + '</option>';
+      var govRoles = isRegulatorOrg ? GOV_ROLE_CODES : null;
+      h.push('<select id="oi-role" class="nc-form-select">' + (govRoles || ROLE_CODES).map(function (c) {
+        return '<option value="' + c + '">' + (govRoles ? GOV_ROLE_NAMES[c] : ROLE_NAMES[c]) + '</option>';
       }).join("") + '</select>');
-      h.push('<select id="oi-site" class="nc-form-select"><option value="">Org-wide (no site)</option>' +
-        state.sites.map(function (s) { return '<option value="' + s.id + '">' + esc(s.name) + '</option>'; }).join("") + '</select>');
+      if (!isRegulatorOrg) {
+        h.push('<select id="oi-site" class="nc-form-select"><option value="">Org-wide (no site)</option>' +
+          state.sites.map(function (s) { return '<option value="' + s.id + '">' + esc(s.name) + '</option>'; }).join("") + '</select>');
+      }
       h.push('<button class="filter-btn" id="oi-send" style="background:rgba(245,197,24,0.12);color:var(--yellow);border-color:rgba(245,197,24,0.35);">📨 Invite</button>');
       h.push('</div>');
       h.push('<div id="oi-token" style="display:none;margin-bottom:12px;font-size:12px;line-height:1.7;color:var(--text2);background:var(--bg-card2);border:1px solid var(--border);border-radius:8px;padding:10px;">' +
@@ -402,6 +456,13 @@
 
   // ---- events --------------------------------------------------------------
   function bindEvents() {
+    // Session 21 — join requests (module optional; never blocks the panel)
+    if (window.MG_JOIN) {
+      var jCard = el("mgJoinAdminCard");
+      if (jCard) MG_JOIN.renderAdminCard("mgJoinAdminCard");
+      var jOpt = el("mgJoinOptInHost");
+      if (jOpt) MG_JOIN.renderOptInToggle("mgJoinOptInHost");
+    }
     var send = el("oi-send");
     if (send) send.addEventListener("click", onInvite);
     var revokes = document.querySelectorAll(".oi-revoke");
@@ -515,8 +576,16 @@
   function onInvite() {
     var email = el("oi-email").value.trim();
     var role = el("oi-role").value;
-    var siteId = el("oi-site").value || null;
+    var siteId = el("oi-site") ? el("oi-site").value || null : null;
     if (!email) { statusLine("Enter an email address to invite.", true); return; }
+    if (isRegulatorOrgFor(state.orgId) && GOV_ROLE_CODES.indexOf(role) >= 0) {
+      // Regulator org: government roles cannot ride the commercial invite
+      // path (org_invites/org_add_member reject them server-side). Onboard
+      // officials by inviting as Member, then assign the government role
+      // through regulator role management (Government tab) after acceptance.
+      statusLine("Government officials: invite as Member first, then assign their government role after they accept.", true);
+      return;
+    }
     setBusy(true, "oi-send");
     MG_AUTH.orgSendInvite(state.orgId, email, role, siteId).then(function (token) {
       setBusy(false, "oi-send");
@@ -608,5 +677,5 @@
     }
   }
 
-  window.OrgAdmin = { render: render, refresh: refresh };
+  window.OrgAdmin = { render: render, refresh: refresh, get _state() { return state; } };
 })();

@@ -36,6 +36,16 @@ function resolveEntry() {
       dismissSplash('workspace');
       if (window.MG_GATE) { MG_GATE.showGate(); MG_GATE.showGateMsg(t ? t('gateNoOrg') : 'No organization has been assigned to your account yet. Ask your administrator for an invitation, or create your own organization.', 'info'); }
     } else if (destination === 'COMPANY_ADMIN' || destination === 'GOVERNMENT_WORKSPACE') {
+      // Session 21 — workspace switching: an admin may intentionally work in
+      // the Worker Workspace. The preference is a UI choice only — the role
+      // in the database never changes, and every admin surface still gates
+      // on the server-side role (worker/admin.html rejects non-admins).
+      try {
+        if (sessionStorage.getItem('mg_workspace') === 'worker') {
+          dismissSplash('workspace');
+          return;
+        }
+      } catch (e) { /* storage unavailable: default admin routing */ }
       dismissSplash('workspace');
       window.location.replace('admin.html');
     } else if (destination === 'SELECT_ORGANIZATION') {
@@ -1165,6 +1175,9 @@ async function enableNotifications() {
       scheduleNotifications();
       // Fire a test notification immediately
       sendSafetyTipNotification(true);
+      // Session 21: register this browser for Web Push (server-side store).
+      // In-app notifications stay authoritative; failure never blocks the UI.
+      if (window.MG_PUSH) { window.MG_PUSH.subscribe(); }
     }
     renderNotificationWidget();
   } catch(e) {
@@ -1175,6 +1188,8 @@ async function enableNotifications() {
 function disableNotifications() {
   localStorage.setItem('mg_notif_enabled', 'false');
   if (notificationTimer) { clearTimeout(notificationTimer); notificationTimer = null; }
+  // Session 21: drop this browser's push registration (own rows only, server-side).
+  if (window.MG_PUSH) { window.MG_PUSH.unsubscribe(); }
   renderNotificationWidget();
 }
 
