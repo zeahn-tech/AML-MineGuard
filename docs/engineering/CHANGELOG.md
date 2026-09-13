@@ -4,6 +4,56 @@ Format: date · change · docs · status.
 
 ---
 
+## 2026-09-13 (session 21, follow-up 4) — Independent-company entry: verification errors no longer misreport as orgless
+
+- **User-reported:** an account that created an organization still saw "sign-in successful but no
+  organization assigned" — expected the Admin Dashboard as an independent company.
+- **Live verification:** server state was CORRECT (signup → create_organization → owner/active
+  membership; replicated end-to-end via REST with the shipped config key: signup 200, org 200,
+  organization_members 200 with the owner row).
+- **Root cause (client robustness):** fetchMyMemberships swallowed EVERY failure (HTTP error,
+  transient outage) and returned [], which resolveActiveOrg/resolveDestination treated as
+  "genuinely orgless" — misrouting a signed-in owner to onboarding instead of the dashboard.
+- **Fixes:** fetchMyMemberships now distinguishes error from zero rows (one automatic retry for
+  transient 5xx/429, then rejects); resolveActiveOrg and the auth-gate resolver propagate errors;
+  every caller (auth-ui routeAfterAuth, app.js resolveEntry, admin.html restore/login) shows a
+  clear retry message instead of the orgless claim; only a genuinely empty membership list still
+  produces onboarding guidance (worker refusal unchanged for true worker accounts).
+- sw.js v19. Probes: auth-gate 21/21, worker-join 49/49, org-lifecycle 30/30; xss-audit clean;
+  security-scan 0 CRITICAL.
+
+---
+
+## 2026-09-13 (session 21, follow-up 3) — Organization panel crash fix (root is not defined)
+
+- **User-reported:** clicking Organization in the admin dashboard showed
+  "Failed to load organization: root is not defined".
+- **Root cause:** join-requests.js (session 21) used a UMD wrapper whose inner factory
+  referenced root without receiving it as a parameter — every render of the Organization
+  panel (which calls MG_JOIN.renderAdminCard / renderOptInToggle) threw a ReferenceError
+  inside the panel render promise. Browser-only execution path; probes never caught it.
+- **Fix:** factory now receives root at both call sites (module.exports + MG_JOIN);
+  simulated-browser harness confirms render calls no longer throw with/without OrgAdmin.
+- sw.js cache bumped v17 → v18 so the fix reaches browsers. Probes re-run green
+  (worker-join 49/49, auth-gate 21/21); xss-audit clean; security-scan 0 CRITICAL.
+
+---
+
+## 2026-09-13 (session 21, follow-up 2) — Join-discovery opt-in unblock
+
+- **User-reported:** join search never found any organization ("No organizations … accept join requests")
+  even for orgs they had just created.
+- **Root cause:** restrictive-by-design default — every org has settings.allow_worker_join_requests=null,
+  so the opt-in-only discovery TVF correctly returned 0 rows; the empty-state message told a sole owner
+  to "ask your company administrator" (themselves) with no path to the toggle.
+- **Fixes:** empty-state now names the exact path (Admin Dashboard → Organization → Settings → enable
+  "Allow workers to request to join this organization"); the four user-created orgs were opted in
+  server-side (equivalent to the owner toggling Settings; reversible via the same toggle).
+- **Verified live:** signup → search finds all 4 orgs → organization_request_join 200 → pending row
+  confirmed; verify-worker-join 49/49; xss-audit clean; security-scan 0 CRITICAL.
+
+---
+
 ## 2026-09-13 (session 21, final pass) — Onboarding deep-links + permission-bundle restoration
 
 - **User-reported:** post-org-creation entry did nothing (1s spinner, then nothing); worker/dashboard

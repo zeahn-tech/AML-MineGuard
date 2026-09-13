@@ -183,13 +183,31 @@
   function fetchMyMemberships() {
     var s = getSession();
     if (!s || !s.access_token) return Promise.resolve([]);
-    return fetch(BASE + "/rest/v1/organization_members?select=organization_id,user_id,role,status&order=organization_id.asc", {
-      headers: pgHeaders(s.access_token)
-    }).then(function (res) { return res.json(); })
-      .then(function (rows) {
+    function once() {
+      return fetch(BASE + "/rest/v1/organization_members?select=organization_id,user_id,role,status&order=organization_id.asc", {
+        headers: pgHeaders(s.access_token)
+      }).then(function (res) {
+        if (!res.ok) {
+          // A failed verification must NOT be reported as "no memberships":
+          // every caller would misroute a signed-in owner to the orgless
+          // onboarding state. Distinguish error from genuinely-zero rows.
+          var err = new Error("Could not verify organization memberships (HTTP " + res.status + ")");
+          err.httpStatus = res.status;
+          err.transient = res.status >= 500 || res.status === 429;
+          throw err;
+        }
+        return res.json();
+      }).then(function (rows) {
         return Array.isArray(rows) && s.user ? rows.filter(function (r) { return r.user_id === s.user.id; }) : [];
-      })
-      .catch(function () { return []; });
+      });
+    }
+    // One automatic retry for transient server failures, then surface the error.
+    return once().catch(function (err) {
+      if (err && err.transient) {
+        return new Promise(function (resolve) { setTimeout(resolve, 800); }).then(once);
+      }
+      throw err;
+    });
   }
 
   function fetchOrganization(id) {
@@ -685,7 +703,11 @@
         setSelectedOrgId(chosen.organization_id);
       }
       return chosen;
-    }).catch(function () { return null; });
+    });
+    // NOTE: verification errors now PROPAGATE (previously swallowed → null,
+    // which misrouted signed-in owners to the orgless onboarding state).
+    // Callers distinguish "genuinely orgless" (null) from "verify failed"
+    // (rejected promise) and must surface the difference to the user.
   }
 
   window.MG_AUTH = {

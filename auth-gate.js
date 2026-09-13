@@ -62,7 +62,10 @@
         if (multi) return "SELECT_ORGANIZATION";
         return "WORKER_WORKSPACE";
       });
-    }).catch(function () { return "AUTH_REQUIRED"; });
+      // Verification errors PROPAGATE (resolveDestination rejects). Mapping a
+      // failed verification to NO_ORGANIZATION/AUTH_REQUIRED misrouted signed-in
+      // owners to the orgless onboarding state; callers now surface the error.
+    });
   }
 
   // ---- gate UI (reuses splash visual identity) ----------------------------
