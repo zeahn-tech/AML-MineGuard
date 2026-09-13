@@ -173,7 +173,15 @@
   // (the gate resolver in auth-gate.js is the single source of truth).
   function routeAfterAuth() {
     if (!(window.MG_GATE && window.MG_AUTH)) return;
-    window.MG_GATE.resolveDestination(MG_AUTH).then(function (dest) {
+    window.MG_GATE.resolveDestination(MG_AUTH).catch(function (err) {
+      // Verification failed (connection/server) — NOT the same as being
+      // orgless. Say so; the user keeps their session and can retry.
+      if (window.MG_GATE) {
+        MG_GATE.showGate();
+        MG_GATE.showGateMsg("Signed in, but we could not verify your organization access (" + ((err && err.message) || "connection issue") + "). Please retry in a moment.", "info");
+      }
+    }).then(function (dest) {
+      if (!dest) return; // already handled by the catch above
       if (dest === "COMPANY_ADMIN" || dest === "GOVERNMENT_WORKSPACE") {
         // Session 21 — respect an intentional Worker-Workspace session choice;
         // the default remains the admin console.

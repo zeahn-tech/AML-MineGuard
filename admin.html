@@ -1942,7 +1942,7 @@ function attemptAdminEntry() {
           if (err && !err.textContent) showWorkerRefusal();
           return;
         }
-        showClaimStep('Your account is not yet connected to an organization. Create an organization, claim this deployment’s seeded organization (first-deployment bootstrap only), or join one by invitation.');
+        showClaimStep('Signed in successfully — your account is not yet connected to an organization. Create an organization, claim this deployment’s seeded organization (first-deployment bootstrap only), or join one by invitation.');
       });
     })
     .catch(function () { setLoginBusy(false); showLoginError('Could not verify organization access. Please retry.'); });
@@ -2016,7 +2016,12 @@ function showSignedInOnboarding() {
           }).catch(function () { showSignedInOnboarding(); });
         }
         else showSignedInOnboarding();
-      }).catch(function () { try { document.getElementById('loginUser').focus(); } catch (e) {} });
+      }).catch(function (err) {
+        // Verification failure ≠ orgless: never dump a signed-in owner onto the
+        // empty login form; say what failed so they retry instead of re-signing-up.
+        console.warn('[Admin] membership verification failed:', err && err.message);
+        showLoginError('Could not verify your account access (connection issue). Please wait a moment and sign in again.');
+      });
     }).catch(function () {});
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);

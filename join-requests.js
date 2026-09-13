@@ -24,11 +24,11 @@
 // ============================================================
 (function (root, factory) {
   if (typeof module === "object" && module.exports) {
-    module.exports = factory();
+    module.exports = factory(root);
   } else {
-    root.MG_JOIN = factory();
+    root.MG_JOIN = factory(root);
   }
-})(typeof self !== "undefined" ? self : globalThis, function () {
+})(typeof self !== "undefined" ? self : globalThis, function (root) {
   "use strict";
 
   function esc(s) {
@@ -83,10 +83,19 @@
       var list = Array.isArray(rows) ? rows : (rows && rows.data) || [];
       box.dataset.loaded = "";
       if (!list.length) {
+        // Make the restrictive-by-design default actionable: owners/admins can
+        // flip the opt-in themselves (Organization → Settings), so say exactly
+        // where — "ask your administrator" alone is a dead end for a sole owner
+        // testing their own join flow.
         box.innerHTML = '<div style="font-size:12px;color:#9aa0b4;padding:6px 0;line-height:1.6;">' +
           (q
             ? 'No organizations matching “' + esc(q) + '” currently accept join requests.'
-            : 'No organizations currently accept join requests. Ask your company administrator to enable them, or use an invitation.') +
+            : 'No organizations currently accept join requests.') +
+          '<br/><span style="color:#6b7185;">By default, organizations do not appear in this search. '
+          + 'To allow workers to request to join, an Owner or Admin must open '
+          + '<strong style="color:#9aa0b4;">Admin Dashboard → Organization → Settings</strong> and enable '
+          + '<em>“Allow workers to request to join this organization.”</em> '
+          + 'Alternatively, use an invitation link.</span>' +
           '</div>';
         return;
       }

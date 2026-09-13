@@ -51,12 +51,24 @@ function resolveEntry() {
     } else if (destination === 'SELECT_ORGANIZATION') {
       dismissSplash('workspace');
       if (window.MG_GATE) { MG_GATE.showGate(); MG_GATE.showGateMsg(t ? t('gateSelectOrg') : 'You belong to more than one organization. Open the account menu to choose which one to work in.', 'info'); }
+    } else if (destination === 'VERIFY_FAILED') {
+      // Session verification failed (connection/server) — do NOT claim the user
+      // is signed out or orgless. Gate stays with a retry message (added by the
+      // caller); the splash is dismissed so the user can see the state.
+      dismissSplash('gate');
     } else {
       dismissSplash('workspace');
     }
   }
   if (!(window.MG_GATE && window.MG_AUTH && window.MG_CONFIG)) { finish('AUTH_REQUIRED'); return; }
-  MG_GATE.resolveDestination(MG_AUTH).then(finish).catch(function () { finish('AUTH_REQUIRED'); });
+  MG_GATE.resolveDestination(MG_AUTH).then(finish).catch(function (err) {
+    // Verification failure ≠ signed-out: the user may hold a valid session and
+    // an organization. Show the gate with a clear retry message instead of
+    // pretending they need to sign in again.
+    console.warn('[MineGuard] destination verification failed:', err && err.message);
+    finish('VERIFY_FAILED');
+    if (window.MG_GATE) MG_GATE.showGateMsg('Signed in, but we could not verify your organization access. Please retry in a moment.', 'info');
+  });
 }
 
 window.addEventListener('load', () => { setTimeout(resolveEntry, 900); });
