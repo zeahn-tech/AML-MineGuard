@@ -145,6 +145,19 @@ async function main() {
     "request: worker submits join request (role server-set)", `HTTP ${r.status}`);
   created.requests.push(`'${requestId}'`);
 
+  // REGRESSION (…115): the list TVF previously failed for the legitimate
+  // caller too — 42804 (varchar email vs text TVF column) — and the client
+  // swallowed the error, hiding the Approve buttons entirely. The owner MUST
+  // get a 200 with the pending row (email cast to text).
+  r = await rpc("organization_join_requests_list", { p_organization_id: org.id }, owner.token);
+  const ownerList = Array.isArray(r.data) ? r.data : [];
+  const pendingRow = ownerList.find(x => x.id === requestId && x.status === "pending");
+  report(r.status === 200 ? "PASS" : "FAIL",
+    "review: OWNER can list join requests (200 — 42804 email-cast regression)", `HTTP ${r.status} ${JSON.stringify(r.data).slice(0, 140)}`);
+  report(!!pendingRow ? "PASS" : "FAIL",
+    "review: pending request visible in owner list with requester email",
+    JSON.stringify(ownerList).slice(0, 140));
+
   r = await rpc("organization_request_join", { p_organization_id: org.id }, worker.token);
   report(r.status === 400 && /pending request/i.test(String(r.data?.message || r.data)) ? "PASS" : "FAIL",
     "request: duplicate pending request DENIED", `HTTP ${r.status}`);
