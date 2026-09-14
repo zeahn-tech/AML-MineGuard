@@ -292,7 +292,15 @@
       Array.prototype.forEach.call(host.querySelectorAll("[data-reject]"), function (b) {
         b.addEventListener("click", function () { reviewFlow(b.getAttribute("data-reject"), false, b); });
       });
-    }).catch(function () { host.innerHTML = ""; });
+    }).catch(function (err) {
+      // Never fail silently: an owner seeing an empty card must be able to
+      // distinguish "no pending requests" from "the review list failed to
+      // load" (a swallowed error here hid the Approve buttons entirely).
+      var msg = (err && err.message) || "Failed to load join requests.";
+      host.innerHTML = '<div style="background:rgba(230,57,70,0.06);border:1px solid rgba(230,57,70,0.3);border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:#e63946;line-height:1.6;">' +
+        '⚠️ Could not load worker join requests: ' + esc(msg) +
+        '<br/><span style="color:#9aa0b4;">Please retry. If it persists, the pending requests still exist and will appear here once the load succeeds.</span></div>';
+    });
   }
 
   function reviewFlow(requestId, approve, btn) {

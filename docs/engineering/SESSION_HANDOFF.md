@@ -6,6 +6,15 @@
 | Date | 2026-09-13 |
 | Agent | Buffy (Freebuff/Vly) |
 
+## Session 22 (2026-09-14) — Approve button restored
+
+- User report: no Approve button for worker join requests. Live data showed 2 real
+  pending requests; the failure was the …112 list TVF 42804 (varchar→text email)
+  breaking every owner list call, silently blanked client-side. Fixed via …115
+  (email::text) + visible client error state + regression checks in
+  verify-worker-join (51/51 PASS). SW v20. Full regression green (gate 21, olc 30,
+  reg 33, push 9; xss clean; scan 0 CRITICAL).
+
 ## Session 21 — final remediation pass (same day)
 
 User still could not reach the worker/admin screens after creating an org. Forensics found the

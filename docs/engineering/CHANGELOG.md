@@ -483,6 +483,18 @@ audit log, connectivity indicators).
 
 Next
 - Phase 01 definition and gates recorded in SESSION_HANDOFF.md; see Phase 01 "Next task".
+## Session 22 (2026-09-14) — Approve button restored: list-TVF 42804 hotfix
+
+- CRITICAL fix: organization_join_requests_list() as re-published by …112 selected
+  auth.users.email (varchar(255)) into a text TVF column → EVERY call failed with
+  42804, and the client's silent catch rendered an empty review card — owners never
+  saw Approve/Reject for genuinely pending requests. Migration …115 re-publishes
+  with u.email::text (authorization/limits unchanged from …112).
+- join-requests.js: the review card no longer swallows load errors — failures render
+  a visible retry error instead of an indistinguishable empty card.
+- scripts/verify-worker-join.mjs: +2 regression checks — owner list call returns 200
+  with the pending row (42804 class guarded).
+- sw.js cache v19 → v20.
 
 ## Session 19 (2026-09-12)
 
