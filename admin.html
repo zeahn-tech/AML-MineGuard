@@ -1166,6 +1166,10 @@
     <input type="password" class="login-input" id="loginPass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter') doLogin()" />
     <button class="login-btn" id="loginBtn" onclick="doLogin()">🔐 LOGIN</button>
     <div class="login-error" id="loginError"></div>
+    <!-- Session 22 — worker route guard action: an approved worker signing in on
+         the admin console is refused admin access but must have a one-tap path
+         to the worker workspace (text-only refusal previously stranded them). -->
+    <button id="loginWorkerAppBtn" style="display:none;width:100%;margin-top:10px;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#2ec4b6,#1d9a8e);color:#fff;font-weight:800;font-size:14px;cursor:pointer;letter-spacing:0.5px;" onclick="window.location.href='index.html'">🦺 Open the Worker App</button>
     <div id="loginClaimWrap" style="display:none;margin-top:14px;">
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;" id="loginClaimHint"></div>
       <div id="loginOnboardOptions" style="display:none;">
@@ -1763,6 +1767,9 @@ function showLoginError(msg) {
 function hideLoginError() {
   const el = document.getElementById('loginError');
   if (el) el.style.display = 'none';
+  // Session 22 — keep the worker-app action in sync with the refusal message.
+  const wb = document.getElementById('loginWorkerAppBtn');
+  if (wb) wb.style.display = 'none';
 }
 
 function setLoginBusy(busy) {
@@ -1801,6 +1808,18 @@ function showWorkerRefusal() {
     err.textContent = 'Your account uses the MineGuard worker app. Administrative access requires an organization admin or owner role — ask your administrator if you need elevated access.';
     err.style.display = 'block';
   }
+  // Session 22 — the refusal is actionable: approved workers are routed to the
+  // worker workspace with one tap (previously text-only — the refusal comment
+  // promised a worker-app link that did not exist).
+  const wb = document.getElementById('loginWorkerAppBtn');
+  if (wb) wb.style.display = 'block';
+}
+
+function hideWorkerRefusal() {
+  const wb = document.getElementById('loginWorkerAppBtn');
+  if (wb) wb.style.display = 'none';
+  const err = document.getElementById('loginError');
+  if (err) { err.textContent = ''; err.style.display = 'none'; }
 }
 
 function enterDashboard() {
@@ -2046,7 +2065,7 @@ function refreshPanel(id) {
   if (id === 'analytics')  renderAnalytics();
   if (id === 'workers')    renderWorkers();
   if (id === 'organization') window.OrgAdmin && OrgAdmin.render();
-  if (id === 'government') window.GovAdmin && GovAdmin.render();  if (id === 'organization') window.OrgAdmin && OrgAdmin.render();
+  if (id === 'government') window.GovAdmin && GovAdmin.render();
   if (id === 'deleted')    renderDeletedPanel();
   if (id === 'settings')   loadSettings();
   if (id === 'notices')    renderAdminNoticesPanel();
@@ -2144,24 +2163,47 @@ function bindAdminConnectivityRefreshHandlers() {
 function attachFirebaseListeners() {
   if (adminFirebaseListenersAttached) return;
   adminFirebaseListenersAttached = true;
-  // Attach Firestore real-time listeners
+  // Session 22 — auto-refresh remediation. The 15s Firestore poll used to
+  // re-render WHATEVER panel was active, including Organization/Government/
+  // Notices. Those panels rebuild their full DOM (OrgAdmin.render() flashes
+  // 'Loading organization…' and re-fetches everything), which made the whole
+  // screen flash blank every 15 seconds and destroyed in-progress input
+  // (half-typed invite emails, toggle interactions). Now:
+  //   * only panels whose content derives from _incidents/_jsas auto-refresh;
+  //   * a re-render happens ONLY when the data actually changed (signature),
+  //     so an unchanged poll no longer flashes anything.
+  // The manual 🔄 refresh button keeps its full re-fetch behavior.
+  const DATA_PANELS = { overview: 1, incidents: 1, jsas: 1, analytics: 1, workers: 1, deleted: 1 };
+  function incSig(rows) {
+    return rows.length + '|' + rows.map(r => [r._id || r.savedAt, r.status, r.severity].join(':')).join(',');
+  }
+  function jsaSig(rows) {
+    return rows.length + '|' + rows.map(r => [r._id || r.savedAt, r.status].join(':')).join(',');
+  }
+  let lastIncidentsSig = null;
+  let lastJsasSig = null;
   subscribeIncidents(function(docs) {
     _incidents = docs;
     setSyncUI('synced');
     updateIncidentBadge();
+    const sig = incSig(docs);
+    if (sig === lastIncidentsSig) return; // unchanged poll → no re-render
+    lastIncidentsSig = sig;
     const active = document.querySelector('.panel.active');
-    if (active) refreshPanel(active.id.replace('panel-', ''));
-    else renderOverview();
+    const id = active && active.id.replace('panel-', '');
+    if (active && DATA_PANELS[id]) refreshPanel(id);
+    else if (!active) renderOverview();
   });
 
   subscribeJSAs(function(docs) {
     _jsas = docs;
+    const sig = jsaSig(docs);
+    if (sig === lastJsasSig) return;
+    lastJsasSig = sig;
     const active = document.querySelector('.panel.active');
-    if (active) {
-      const id = active.id.replace('panel-', '');
-      if (id === 'jsas' || id === 'analytics' || id === 'workers' || id === 'overview') {
-        refreshPanel(id);
-      }
+    const id = active && active.id.replace('panel-', '');
+    if (active && (id === 'jsas' || id === 'analytics' || id === 'workers' || id === 'overview')) {
+      refreshPanel(id);
     }
   });
 }

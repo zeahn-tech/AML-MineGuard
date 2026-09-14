@@ -4,7 +4,18 @@
 |---|---|
 | Session | 21 — Worker join requests + admin approval + notifications/push COMPLETE (join-requests.js; migrations …110–…114 applied live; verify-worker-join 49/49 + verify-push-foundation 9/9 PASS self-cleaning; full regression all-PASS). Prior: 20 — Regulator organization claim + provisioning COMPLETE (…100–…102; verify-regulator-lifecycle 33/33). Prior: 18 — Organization lifecycle + authentication remediation COMPLETE (create_organization + org_transfer_ownership RPCs applied live; onboarding UI create/claim/join; selected-org model + switcher; verify-org-lifecycle 30/30 PASS; full regression all-PASS). Prior: 17 — Phase 05 cutover COMPLETE (fresh-start, ADR-014): owner waived the Firestore import; migrations `…097` (safety_notices + acks) + `…098` (soft-delete RPC) applied live; `notices.js` cut over to PostgREST for signed-in users (Firestore = fallback-only); `verify-phase05.mjs` 42/42 PASS self-cleaning; full probe suite (04/05/06/06c/07/08/09/10/11/12/13) all-PASS after audit-trigger-count expectations updated 21→23; **rotations from the session-16 incident still REQUIRED** |
 | Date | 2026-09-13 |
-| Agent | Buffy (Freebuff/Vly) |
+| Agent | Buffy (Freebuff/Vly) |## Session 22 follow-up 2 (2026-09-14) — auto-refresh flashing
+
+- 15s Firestore poll no longer re-renders DOM-heavy panels (Organization/
+  Government/Notices) or unchanged data; manual refresh button unchanged. SW v22.
+
+## Session 22 follow-up (2026-09-14) — approved-worker entry
+
+- Worker entry remediation: admin.html worker refusal now carries an actionable
+  🦺 Open the Worker App button; worker-app post-sign-in routing now calls
+  initApp() (previously an uninitialized shell). Server chain re-proven correct
+  end-to-end (RLS visibility + resolver). Probes hardened vs Supabase 502/504
+  flakes; all green. SW v21.
 
 ## Session 22 (2026-09-14) — Approve button restored
 
