@@ -211,9 +211,16 @@
         }
       } else {
         // WORKER_WORKSPACE: hide the gate, reveal the authenticated shell.
+        // Session 22 — also RUN the app bootstrap: on a post-sign-in route the
+        // load-time resolveEntry already consumed the splash path (or the shell
+        // was never initialized), so without initApp() the workspace rendered
+        // uninitialized (empty reference tabs, unwired SOS). Safe to call
+        // directly — initApp is idempotent for all its idempotent sub-steps and
+        // the shell is the only element it touches.
         if (window.MG_GATE) MG_GATE.hideGate();
         var app = document.getElementById("app");
         if (app) app.classList.remove("hidden");
+        if (typeof window.initApp === "function") window.initApp();
       }
     });
   }

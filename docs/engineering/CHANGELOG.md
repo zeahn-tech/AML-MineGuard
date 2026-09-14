@@ -482,7 +482,24 @@ photos, emergency/SOS, notices, i18n EN/FR, PWA offline, admin analytics/filteri
 audit log, connectivity indicators).
 
 Next
-- Phase 01 definition and gates recorded in SESSION_HANDOFF.md; see Phase 01 "Next task".
+- Phase 01 definition and gates recorded in SESSION_HANDOFF.md; see Phase 01 "Next task".## Session 22 follow-up (2026-09-14) — approved-worker entry to the worker workspace
+
+- User report: approved worker could not reach the worker screen. Live server state
+  was CORRECT (worker/active membership; RLS-visible with the worker's own token;
+  resolver returns WORKER_WORKSPACE — proven with a self-cleaning probe). The gaps
+  were client-side entry surfaces:
+  1. admin.html showWorkerRefusal was text-only (its own comment promised a
+     worker-app link that did not exist) — an approved worker signing in on the
+     admin console was stranded. Added the 🦺 Open the Worker App button, synced
+     with hideLoginError.
+  2. auth-ui.js routeAfterAuth (WORKER_WORKSPACE branch) revealed the shell but
+     never called initApp() — post-sign-in the workspace rendered uninitialized
+     (empty reference tabs, unwired SOS). Now calls window.initApp().
+- Probes: sign-in helpers hardened to retry transient Supabase Auth 502/504
+  (platform-side flake observed during this session); verify-worker-join 51/51,
+  verify-auth-gate 21/21, verify-org-lifecycle 30/30; xss clean; scan 0 CRITICAL.
+- sw.js cache v20 → v21.
+
 ## Session 22 (2026-09-14) — Approve button restored: list-TVF 42804 hotfix
 
 - CRITICAL fix: organization_join_requests_list() as re-published by …112 selected

@@ -70,7 +70,16 @@ async function signUp(email) {
      select email, id, jsonb_build_object('sub', id::text, 'email', email), 'email', now(), now(), now()
      from nu returning user_id as id;`);
   if (!Array.isArray(u) || !u.length || !u[0].id) throw new Error(`create user ${email} failed`);
-  const s = await rest("/auth/v1/token?grant_type=password", { method: "POST", body: { email, password: PASSWORD } });
+  // Session 22: Supabase Auth intermittently returns 502 (platform-side,
+  // ~1/3 of requests during the 2026-09-14 window). Retry a few times with a
+  // short backoff before giving up — a transient 502 is not a probe failure.
+  let s = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    s = await rest("/auth/v1/token?grant_type=password", { method: "POST", body: { email, password: PASSWORD } });
+    if (s.status === 200 && s.data?.access_token) break;
+    if ((s.status === 502 || s.status === 504) && attempt < 3) { await new Promise(r => setTimeout(r, 1500 * (attempt + 1))); continue; }
+    break;
+  }
   if (s.status !== 200 || !s.data.access_token) throw new Error(`signin ${email}: HTTP ${s.status}`);
   created.users.push(`'${s.data.user.id}'`);
   return { userId: s.data.user.id, email, token: s.data.access_token };

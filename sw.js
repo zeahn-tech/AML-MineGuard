@@ -5,7 +5,7 @@
 //        offline navigation fallback
 // ============================================
 
-const CACHE_NAME = 'mineguard-v20';
+const CACHE_NAME = 'mineguard-v22';
 const FIREBASE_PROJECT_ID = 'aml-mineguard';
 const FIREBASE_API_KEY = 'AIzaSyCPqKNe7zyTfBqLT6Gh7Cx2-f7jSf1gvTg';
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;

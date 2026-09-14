@@ -98,7 +98,14 @@ async function signUp(email) {
   if ((u.status !== 200 && u.status !== 201) || !Array.isArray(u.data) || !u.data.length) {
     throw new Error(`create user ${email}: HTTP ${u.status}`);
   }
-  const s = await jfetch("/auth/v1/token?grant_type=password", { method: "POST", body: { email, password: PASSWORD } });
+  // Session 22: retry transient 502s from Supabase Auth (platform-side flake).
+  let s = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    s = await jfetch("/auth/v1/token?grant_type=password", { method: "POST", body: { email, password: PASSWORD } });
+    if (s.status === 200 && s.data?.access_token) break;
+    if ((s.status === 502 || s.status === 504) && attempt < 3) { await new Promise(r => setTimeout(r, 1500 * (attempt + 1))); continue; }
+    break;
+  }
   if (s.status !== 200 || !s.data.access_token) throw new Error(`signin ${email}: HTTP ${s.status}`);
   createdUserEmails.push(email);
   return { userId: s.data.user.id, email, token: s.data.access_token, refresh: s.data.refresh_token };
